@@ -5,25 +5,25 @@
     "chapter",
     "cares_about",
     "understands_goal",
+    "memorable_moments",
     "wants_next",
     "current_feeling",
     "received_payoff",
     "confused_by",
     "losing_patience_with",
-    "continue_reason",
-    "suggested_action"
+    "turn_page_reason"
   ],
   "properties": {
     "chapter": {"type": "integer"},
     "cares_about": {"$ref": "#/$defs/strings"},
     "understands_goal": {"type": "string"},
+    "memorable_moments": {"$ref": "#/$defs/strings"},
     "wants_next": {"$ref": "#/$defs/strings"},
     "current_feeling": {"type": "string"},
     "received_payoff": {"$ref": "#/$defs/strings"},
     "confused_by": {"$ref": "#/$defs/strings"},
     "losing_patience_with": {"$ref": "#/$defs/strings"},
-    "continue_reason": {"type": "string"},
-    "suggested_action": {"type": "string", "enum": ["continue", "adjust", "replan"]}
+    "turn_page_reason": {"type": "string"}
   },
   "$defs": {
     "strings": {"type": "array", "items": {"type": "string"}}

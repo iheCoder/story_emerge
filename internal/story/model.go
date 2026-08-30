@@ -20,10 +20,9 @@ type Project struct {
 // Genesis is the architect's one-time output. Later chapters use the outline
 // directly; no chapter-level director stands between the outline and writer.
 type Genesis struct {
-	Bible              StoryBible   `json:"bible"`
-	Outline            StoryOutline `json:"outline"`
-	InitialState       InitialState `json:"initial_state"`
-	InitialReaderState ReaderState  `json:"initial_reader_state"`
+	Bible        StoryBible   `json:"bible"`
+	Outline      StoryOutline `json:"outline"`
+	InitialState InitialState `json:"initial_state"`
 }
 
 // StoryBible 固化“这是哪一本书”：人物身份、目标读者、叙事承诺、
@@ -51,11 +50,10 @@ type TargetReader struct {
 	Forgives       []string `json:"forgives"`
 	DropsWhen      []string `json:"drops_when"`
 	BingeTriggers  []string `json:"binge_triggers"`
-	FitWithStory   string   `json:"fit_with_story"`
 }
 
-// NarrativePromise 描述这本书承诺提供的阅读体验，用于创作取舍与
-// Reader 观察；它不是可以由程序按关键词判真的类型分类器。
+// NarrativePromise 描述这本书承诺提供的阅读体验，只供创作角色取舍；
+// Reader 不读取它，程序也不能按关键词把它判成类型规则。
 type NarrativePromise struct {
 	PrimaryPleasure     string   `json:"primary_pleasure"`
 	SupportingPleasures []string `json:"supporting_pleasures"`
@@ -207,17 +205,17 @@ type Issue struct {
 	Suggestion  string `json:"suggestion"`
 }
 
-// ReaderState is intentionally subjective and reader-visible. It contains no
-// secret outline/canon knowledge that could contaminate the simulated reader.
-type ReaderState struct {
+// ReaderObservation 是某位目标读者读完一章后的独立观察，而不是会自我
+// 累积的状态。下一章 Writer 可以参考它，但下一次 Reader 调用不能读取它。
+type ReaderObservation struct {
 	Chapter            int      `json:"chapter"`
 	CaresAbout         []string `json:"cares_about"`
 	UnderstandsGoal    string   `json:"understands_goal"`
+	MemorableMoments   []string `json:"memorable_moments"`
 	WantsNext          []string `json:"wants_next"`
 	CurrentFeeling     string   `json:"current_feeling"`
 	ReceivedPayoff     []string `json:"received_payoff"`
 	ConfusedBy         []string `json:"confused_by"`
 	LosingPatienceWith []string `json:"losing_patience_with"`
-	ContinueReason     string   `json:"continue_reason"`
-	SuggestedAction    string   `json:"suggested_action"` // continue, adjust, replan.
+	TurnPageReason     string   `json:"turn_page_reason"`
 }

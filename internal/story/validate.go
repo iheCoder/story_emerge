@@ -9,7 +9,6 @@ import (
 var validThreadStatus = map[string]bool{"active": true, "dormant": true, "resolved": true}
 var validProgressStatus = map[string]bool{"ongoing": true, "completed": true, "blocked": true}
 var validStoryStatus = map[string]bool{"ongoing": true, "ending": true, "completed": true}
-var validReaderAction = map[string]bool{"continue": true, "adjust": true, "replan": true}
 var validLengthProfile = map[string]bool{"short": true, "medium": true, "long": true, "epic": true}
 
 // ValidateProject 只验证启动工作流所需的操作参数。
@@ -73,8 +72,7 @@ func ValidateGenesis(genesis Genesis) error {
 		return err
 	}
 
-	// 阶段五：Reader 初态也属于 Architect 的第 0 章交付，必须对应同一章节。
-	return ValidateReaderState(genesis.InitialReaderState, 0)
+	return nil
 }
 
 // validateAudience 只检查画像是否具备可供 Writer 使用的字段。
@@ -151,16 +149,13 @@ func movementIndex(outline StoryOutline) map[string]StoryMovement {
 	return result
 }
 
-func ValidateReaderState(state ReaderState, chapter int) error {
-	if state.Chapter != chapter {
-		return fmt.Errorf("读者状态章节应为 %d，实际为 %d", chapter, state.Chapter)
+// ValidateReaderObservation 只验证观察属于刚刚读完的章节。
+// Reader 不再输出工作流动作，因此这里没有 continue/adjust/replan 枚举。
+func ValidateReaderObservation(observation ReaderObservation, chapter int) error {
+	if observation.Chapter != chapter {
+		return fmt.Errorf("读者观察章节应为 %d，实际为 %d", chapter, observation.Chapter)
 	}
-	if !validReaderAction[state.SuggestedAction] {
-		return fmt.Errorf("读者建议动作无效: %s", state.SuggestedAction)
-	}
-	if chapter == 0 && len(state.LosingPatienceWith) > 0 {
-		return fmt.Errorf("初始读者状态不能凭空失去耐心")
-	}
+
 	return nil
 }
 

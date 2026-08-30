@@ -9,11 +9,11 @@
 ## 2. 最小角色集合
 
 - Architect 只在初始化出现。它从用户点子确定具体目标读者、Narrative Promise、人物与世界正典、结局方向，以及不带章节槽位的 Story Outline。
-- Writer 读取大纲、已提交事实、人物知识、上一章全文、最近摘要与 Reader State，自由决定本章的长度、场景数、节奏和结束位置。
+- Writer 读取大纲、已提交事实、人物知识、上一章全文、最近摘要与上一章 Reader Observation，自由决定本章的长度、场景数、节奏和结束位置。
 - Recorder 只把正文实际发生的变化写成 StateDelta。
 - Canon Checker 是提交安全门，只检查事实矛盾、知识越界、身份关系漂移、正文与账本不一致、明显截断和虚假完结。
-- Reader 模拟那一个具体读者的当下体验。它不看大纲和秘密，不否决章节，只把在意对象、目标理解、回报、困惑、耐心与继续理由交给下一章。
-- Replanner 不是常驻导演。只有当前 movement 完成、被阻塞，或 Reader 建议 replan 时才更新未来方向。
+- Reader 模拟那一个具体读者的当下体验。它不看作者承诺、大纲、秘密或自己的历史评价，不否决章节，也不输出工作流动作。
+- Replanner 不是常驻导演。只有当前 movement 完成或被阻塞时才更新未来方向。
 
 ## 3. Outline 不是章节清单
 
@@ -23,7 +23,7 @@ Story Outline 回答“这本书接下来准备往哪里走”。它由若干 mo
 
 ## 4. 一章是一笔完整事务
 
-    读取 HEAD、Reader checkpoint 和 active outline
+    读取 HEAD、上一章 Reader Observation 和 active outline
         ↓
     必要时产生候选 replan（尚不对外可见）
         ↓
@@ -35,11 +35,13 @@ Story Outline 回答“这本书接下来准备往哪里走”。它由若干 mo
         ↓
     Reader 观察
         ↓
-    写正文、delta、canon review、reader checkpoint、checkpoint、可选 outline
+    写正文、delta、canon review、reader observation、checkpoint、可选 outline
         ↓
     最后原子推进 HEAD
 
-Reader 调用失败也不提交，因为下一章不能在缺失读者状态的情况下悄悄退化。候选 replan 与章节同一事务提交，避免大纲版本领先正式故事。
+Reader 调用失败也不提交，因为下一章不能在缺失上一章观察的情况下悄悄退化。候选 replan 与章节同一事务提交，避免大纲版本领先正式故事。
+
+Reader Observation 是逐章不可变产物，不是累积状态。Reader 下一次调用只读取固定目标画像、上一章全文、最近读者可见摘要、按当前章召回的早期可见摘要和当前章；上一轮 Observation 只进入下一章 Writer，不能反向进入下一次 Reader。
 
 ## 5. 什么仍是硬约束
 
@@ -50,10 +52,10 @@ Reader 调用失败也不提交，因为下一章不能在缺失读者状态的�
 - story_status 为 completed 时，已登记剧情线必须收束。
 - 调用预算、有界格式修复、有界正文修订和 HEAD 最后提交。
 
-主角目标不清、类型快感未兑现、画面弱和没有继续阅读理由会被 Reader 明确记录并影响下一章，但项目不把主观判断伪装成可确定的提交阻断。
+主角目标不清、画面弱和没有继续阅读理由会被 Reader 明确记录并影响下一章 Writer，但项目不把主观判断伪装成提交阻断或 Replanner 指令。
 
 ## 6. 长篇边界
 
-epic 表示二三十万字甚至更长的故事规模意图，不等于 100 个预先编号的空槽。结构可在 movement 边界重规划；正典、人物知识、剧情线和 Reader State 按章节持续保存。这个设计改善了长程连续性与反馈闭环，但单次三章试跑不能证明百章质量，仍需要多题材、多随机种子和真实目标读者留存评测。
+epic 表示二三十万字甚至更长的故事规模意图，不等于 100 个预先编号的空槽。结构可在 movement 边界重规划；正典、人物知识、剧情线和逐章 Reader Observation 按章节持续保存。这个设计改善了长程连续性与反馈闭环，但单次三章试跑不能证明百章质量，仍需要多题材、多随机种子和真实目标读者留存评测。
 
 DeepSeek 三章实跑进一步确认：当前各角色仍携带完整 State，第三章 Canon 输入已达到 27366 tokens，长期成本会随状态增长而近似二次上升。项目已经完成“创作约束减法”，但尚未完成百章所需的分层记忆/检索设计；在解决这一点前不得宣称支持低成本稳定生成一百章。

@@ -170,25 +170,37 @@ func generateJSON[T any](
 		return zero, err
 	}
 
-	// 缩短上下文，只让修复模型处理坏 JSON；仍受同一调用预算约束。
-	request.Stage = stage + "_format_repair"
-	// 格式修复只携带坏掉的答案，不再重复原始上下文。Schema 已经随请求发送，
-	// 因此模型只需补齐括号、逗号或转义；短输入也能显著减少 Flash 模型被截断的概率。
-	request.Instructions = "你是 JSON 语法修复器。保持原答案的业务含义，只修复 JSON 语法并补齐 Schema 要求的结构。只返回 JSON。"
-	request.Input = "修复下面这份不合法的 JSON：\n\n" + result.Text
-	request.ReasoningEffort = "none"
+	return repairStructuredJSON[T](ctx, engine, request, result.Text, decodeErr)
+}
+
+// repairStructuredJSON 用一次短请求修复已经保存的非法 JSON。
+// 它不重新携带原始业务上下文，避免格式错误演变成第二次内容创作。
+func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request llm.Request, malformed string, decodeErr error) (T, error) {
+	var zero T
+
+	// 修复请求只携带坏答案和精确解析错误，不重复原始创作上下文。
+	request = jsonRepairRequest(request, malformed, decodeErr)
 
 	// 执行一次格式修复并再次严格解码；失败即终止该阶段。
 	repaired, err := engine.generate(ctx, request, true)
 	if err != nil {
 		return zero, err
 	}
-	decoded, decodeErr = decodeStructured[T](repaired.Text)
+	decoded, decodeErr := decodeStructured[T](repaired.Text)
 	if decodeErr != nil {
 		_ = engine.saveMalformedOutput(request.Stage, repaired.Text)
 		return zero, decodeErr
 	}
 	return decoded, nil
+}
+
+func jsonRepairRequest(request llm.Request, malformed string, decodeErr error) llm.Request {
+	request.Stage += "_format_repair"
+	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法、字段缺失和字段类型，使输出严格符合随请求提供的 Schema。只返回 JSON。"
+	request.Input = "解析错误：\n" + decodeErr.Error() + "\n\n修复下面的 JSON：\n\n" + malformed
+	request.ReasoningEffort = "none"
+
+	return request
 }
 
 // saveMalformedOutput 把无法解码的原文保存到 .work 以便人工诊断。

@@ -1,22 +1,20 @@
 {
   "type": "object", "additionalProperties": false,
-  "required": ["bible", "outline", "initial_state", "initial_reader_state"],
+  "required": ["bible", "outline", "initial_state"],
   "properties": {
     "bible": {"$ref": "#/$defs/bible"},
     "outline": {"$ref": "#/$defs/outline"},
-    "initial_state": {"$ref": "#/$defs/initial_state"},
-    "initial_reader_state": {"$ref": "#/$defs/reader_state"}
+    "initial_state": {"$ref": "#/$defs/initial_state"}
   },
   "$defs": {
     "string_array": {"type": "array", "items": {"type": "string"}},
     "target_reader": {
       "type": "object", "additionalProperties": false,
-      "required": ["name", "reading_history", "craves", "forgives", "drops_when", "binge_triggers", "fit_with_story"],
+      "required": ["name", "reading_history", "craves", "forgives", "drops_when", "binge_triggers"],
       "properties": {
         "name": {"type": "string"}, "reading_history": {"type": "string"},
         "craves": {"$ref": "#/$defs/string_array"}, "forgives": {"$ref": "#/$defs/string_array"},
-        "drops_when": {"$ref": "#/$defs/string_array"}, "binge_triggers": {"$ref": "#/$defs/string_array"},
-        "fit_with_story": {"type": "string"}
+        "drops_when": {"$ref": "#/$defs/string_array"}, "binge_triggers": {"$ref": "#/$defs/string_array"}
       }
     },
     "promise": {
@@ -80,16 +78,6 @@
     "initial_state": {
       "type": "object", "additionalProperties": false, "required": ["characters", "facts", "threads"],
       "properties": {"characters": {"type": "array", "items": {"$ref": "#/$defs/character_state"}}, "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}}, "threads": {"type": "array", "items": {"$ref": "#/$defs/thread"}}}
-    },
-    "reader_state": {
-      "type": "object", "additionalProperties": false,
-      "required": ["chapter", "cares_about", "understands_goal", "wants_next", "current_feeling", "received_payoff", "confused_by", "losing_patience_with", "continue_reason", "suggested_action"],
-      "properties": {
-        "chapter": {"type": "integer"}, "cares_about": {"$ref": "#/$defs/string_array"}, "understands_goal": {"type": "string"},
-        "wants_next": {"$ref": "#/$defs/string_array"}, "current_feeling": {"type": "string"}, "received_payoff": {"$ref": "#/$defs/string_array"},
-        "confused_by": {"$ref": "#/$defs/string_array"}, "losing_patience_with": {"$ref": "#/$defs/string_array"},
-        "continue_reason": {"type": "string"}, "suggested_action": {"type": "string", "enum": ["continue", "adjust", "replan"]}
-      }
     }
   }
 }

@@ -28,14 +28,14 @@ type initializationUsage struct {
 }
 
 // Initialize 只调用一次 Architect，验证稳定契约后原子创建第 0 章。
-// 后续章节直接复用这次建立的 Bible、大纲、正典初态和 Reader 初态。
+// Reader 必须读完真实章节后才产生 Observation，初始化阶段不预填主观意见。
 func (engine *Engine) Initialize(ctx context.Context, project story.Project) (story.Genesis, error) {
 	// 阶段一：在模型调用前验证项目输入，避免为无效任务消耗预算。
 	if err := story.ValidateProject(project); err != nil {
 		return story.Genesis{}, err
 	}
 
-	// 阶段二：让 Architect 建立一次性的 Bible、大纲、正典初态和 Reader 初态。
+	// 阶段二：让 Architect 建立一次性的 Bible、大纲和正典初态。
 	genesis, usages, err := engine.generateGenesis(ctx, project)
 	if err != nil {
 		return story.Genesis{}, err
@@ -53,7 +53,7 @@ func (engine *Engine) Initialize(ctx context.Context, project story.Project) (st
 		}
 	}
 
-	engine.emit("architect", "目标读者、叙事承诺、大纲与第 0 章状态已建立")
+	engine.emit("architect", "目标读者、叙事承诺、大纲与正典初态已建立")
 	return genesis, nil
 }
 

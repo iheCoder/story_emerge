@@ -11,8 +11,10 @@ const (
 	// 摘要窗口只控制重复上下文大小，不限制故事能回忆的事实；完整正典仍在 State 中。
 	recentSummaryLimit = 3
 
-	replanMaxOutputTokens   = 8000
-	recorderMaxOutputTokens = 7000
+	replanMaxOutputTokens = 8000
+	// Recorder 输出的是机器状态差量。该上限只防止供应商无限输出，
+	// 不限制正文章节长度、事件数量或人物数量。
+	recorderMaxOutputTokens = 12000
 	canonMaxOutputTokens    = 5000
 	readerMaxOutputTokens   = 3000
 	chapterMaxOutputTokens  = 12000
@@ -45,16 +47,15 @@ type revisionInput struct {
 	Review  story.CanonReview `json:"canon_review"`
 }
 
-// readerInput 是严格的读者可见投影。它有意不含 active outline、隐藏事实、
-// 人物秘密或完整正典状态，防止 Reader 用幕后答案评价“是否看懂”。
+// readerInput 是严格的读者可见投影。它不含作者承诺、历史主观评价、
+// active outline、隐藏事实或完整正典状态，防止 Reader 被既有结论锚定。
 type readerInput struct {
-	TargetReader     story.TargetReader     `json:"target_reader"`
-	NarrativePromise story.NarrativePromise `json:"narrative_promise"`
-	PreviousState    story.ReaderState      `json:"previous_reader_state"`
-	PreviousChapter  string                 `json:"previous_chapter"`
-	RecentSummaries  []story.ChapterSummary `json:"reader_visible_recent_summaries"`
-	CurrentNumber    int                    `json:"current_chapter_number"`
-	CurrentChapter   string                 `json:"current_chapter"`
+	TargetReader           story.TargetReader     `json:"target_reader"`
+	PreviousChapter        string                 `json:"previous_chapter"`
+	RecentSummaries        []story.ChapterSummary `json:"reader_visible_recent_summaries"`
+	EarlyRelevantSummaries []story.ChapterSummary `json:"reader_visible_early_retrieval"`
+	CurrentNumber          int                    `json:"current_chapter_number"`
+	CurrentChapter         string                 `json:"current_chapter"`
 }
 
 type replanInput struct {
@@ -62,21 +63,23 @@ type replanInput struct {
 	OldOutline           story.StoryOutline     `json:"old_outline"`
 	CompletedMovementIDs []string               `json:"completed_movement_ids"`
 	CanonState           story.State            `json:"canonical_state"`
-	ReaderState          story.ReaderState      `json:"reader_state"`
 	RecentSummaries      []story.ChapterSummary `json:"recent_summaries"`
 }
 
 // chapterWork 汇集尚未提交的本章事务产物。字段只在 .work 阶段流转，
 // CommitChapter 成功后才会成为 HEAD 可见历史。
 type chapterWork struct {
-	context     writerContext
-	outline     story.StoryOutline
-	replanned   bool
-	chapter     string
-	delta       story.StateDelta
-	review      story.CanonReview
-	readerState story.ReaderState
-	next        story.State
+	context writerContext
+	// canonicalBase 保留本章开始前的完整状态。Writer 可以只看摘要窗口，
+	// 但 Recorder 应用差量时不能把这个上下文投影误当成正式历史。
+	canonicalBase     story.State
+	outline           story.StoryOutline
+	replanned         bool
+	chapter           string
+	delta             story.StateDelta
+	review            story.CanonReview
+	readerObservation story.ReaderObservation
+	next              story.State
 }
 
 // Run advances by at most limit chapters. A zero limit follows the story's own
@@ -87,7 +90,7 @@ func (engine *Engine) Run(ctx context.Context, limit int) error {
 		return err
 	}
 
-	reader, err := engine.store.LoadReaderState()
+	reader, err := engine.store.LoadLatestReaderObservation()
 	if err != nil {
 		return err
 	}
@@ -124,7 +127,7 @@ func (engine *Engine) loadRunState() (story.Project, story.StoryBible, story.Sta
 	return project, bible, state, err
 }
 
-func (engine *Engine) runChapter(ctx context.Context, project story.Project, bible story.StoryBible, current story.State, reader story.ReaderState) (story.State, story.ReaderState, error) {
+func (engine *Engine) runChapter(ctx context.Context, project story.Project, bible story.StoryBible, current story.State, reader *story.ReaderObservation) (story.State, *story.ReaderObservation, error) {
 	number := current.Chapter + 1
 	engine.emit("chapter", fmt.Sprintf("开始第 %d 章", number))
 
@@ -132,45 +135,46 @@ func (engine *Engine) runChapter(ctx context.Context, project story.Project, bib
 	// 因而后续 Reader 或提交失败时，HEAD 仍停留在上一完整章节。
 	work, err := engine.prepareChapter(ctx, project, bible, current, reader)
 	if err != nil {
-		return story.State{}, story.ReaderState{}, err
+		return story.State{}, nil, err
 	}
 
 	// 正典失败只允许整章修订一次，避免多个角色反复改稿吞噬创作空间。
 	if !work.review.Passed {
 		work, err = engine.reviseChapter(ctx, work)
 		if err != nil {
-			return story.State{}, story.ReaderState{}, err
+			return story.State{}, nil, err
 		}
 	}
 	if !work.review.Passed {
-		return story.State{}, story.ReaderState{}, fmt.Errorf("第 %d 章修订后仍违反正典，现场已保存在 .work", number)
+		return story.State{}, nil, fmt.Errorf("第 %d 章修订后仍违反正典，现场已保存在 .work", number)
 	}
 
 	// Reader 在正文定稿后观察体验；它不否决本章，状态只供下一章参考。
-	work.readerState, err = engine.observeReader(ctx, bible, reader, work.context.PreviousChapter, current.Summaries, work.chapter, number)
+	work.readerObservation, err = engine.observeReader(ctx, bible.TargetReader, work.context.PreviousChapter, current.Summaries, work.chapter, number)
 	if err != nil {
-		return story.State{}, story.ReaderState{}, err
+		return story.State{}, nil, err
 	}
-	if err := engine.store.CommitChapter(work.chapter, work.delta, work.review, work.readerState, work.next, work.outline, work.replanned); err != nil {
-		return story.State{}, story.ReaderState{}, err
+	if err := engine.store.CommitChapter(work.chapter, work.delta, work.review, work.readerObservation, work.next, work.outline, work.replanned); err != nil {
+		return story.State{}, nil, err
 	}
-	engine.emit("chapter", fmt.Sprintf("第 %d 章已提交；读者建议 %s", number, work.readerState.SuggestedAction))
-	return work.next, work.readerState, nil
+
+	engine.emit("chapter", fmt.Sprintf("第 %d 章已提交；读者观察已记录", number))
+	return work.next, &work.readerObservation, nil
 }
 
-func (engine *Engine) prepareChapter(ctx context.Context, project story.Project, bible story.StoryBible, current story.State, reader story.ReaderState) (chapterWork, error) {
-	// 阶段一：只有 movement 已完成、阻塞或 Reader 明确建议 replan 时，
-	// 才为未来路线生成一个候选新版本；平常章节不经过 Director 或 Planner。
+func (engine *Engine) prepareChapter(ctx context.Context, project story.Project, bible story.StoryBible, current story.State, reader *story.ReaderObservation) (chapterWork, error) {
+	// 阶段一：只有 movement 已完成或阻塞时，才为未来路线生成一个候选
+	// 新版本；Reader 只观察体验，不能触发 Replanner 或控制工作流。
 	outline, err := engine.store.LoadOutline(current.OutlineVersion)
 	if err != nil {
 		return chapterWork{}, err
 	}
-	outline, base, replanned, err := engine.maybeReplan(ctx, bible, outline, current, reader)
+	outline, base, replanned, err := engine.maybeReplan(ctx, bible, outline, current)
 	if err != nil {
 		return chapterWork{}, err
 	}
 
-	// 阶段二：Writer 直接使用持久大纲、正典状态和 Reader State 自由写作。
+	// 阶段二：Writer 直接使用持久大纲、正典状态和上一章 Reader Observation 自由写作。
 	chapterCtx, err := engine.buildWriterContext(project, bible, outline, base, reader)
 	if err != nil {
 		return chapterWork{}, err
@@ -179,7 +183,7 @@ func (engine *Engine) prepareChapter(ctx context.Context, project story.Project,
 	if err != nil {
 		return chapterWork{}, err
 	}
-	work := chapterWork{context: chapterCtx, outline: outline, replanned: replanned, chapter: chapter}
+	work := chapterWork{context: chapterCtx, canonicalBase: base, outline: outline, replanned: replanned, chapter: chapter}
 	if err := engine.store.SaveWorking(chapterCtx.NextChapter, "draft.md", chapter); err != nil {
 		return chapterWork{}, err
 	}
@@ -188,14 +192,14 @@ func (engine *Engine) prepareChapter(ctx context.Context, project story.Project,
 	return engine.inspectChapter(ctx, work, "initial")
 }
 
-func (engine *Engine) maybeReplan(ctx context.Context, bible story.StoryBible, outline story.StoryOutline, current story.State, reader story.ReaderState) (story.StoryOutline, story.State, bool, error) {
-	triggered := current.OutlineProgress.Status == "completed" || current.OutlineProgress.Status == "blocked" || reader.SuggestedAction == "replan"
+func (engine *Engine) maybeReplan(ctx context.Context, bible story.StoryBible, outline story.StoryOutline, current story.State) (story.StoryOutline, story.State, bool, error) {
+	triggered := current.OutlineProgress.Status == "completed" || current.OutlineProgress.Status == "blocked"
 	if !triggered {
 		return outline, current, false, nil
 	}
 	input, err := asPrettyJSON(replanInput{Bible: bible, OldOutline: outline,
 		CompletedMovementIDs: current.CompletedMovementIDs, CanonState: current,
-		ReaderState: reader, RecentSummaries: recentSummaries(current.Summaries, recentSummaryLimit)})
+		RecentSummaries: recentSummaries(current.Summaries, recentSummaryLimit)})
 	if err != nil {
 		return story.StoryOutline{}, story.State{}, false, err
 	}
@@ -252,12 +256,12 @@ func (engine *Engine) extractValidDelta(ctx context.Context, work chapterWork) (
 		return story.StateDelta{}, story.State{}, err
 	}
 
-	delta, err = engine.normalizeDelta(work.context.NextChapter, work.context.State, delta)
+	delta, err = engine.normalizeDelta(work.context.NextChapter, work.canonicalBase, delta)
 	if err != nil {
 		return story.StateDelta{}, story.State{}, err
 	}
 
-	next, validationErr := story.ApplyDelta(work.context.State, delta)
+	next, validationErr := story.ApplyDelta(work.canonicalBase, delta)
 	if validationErr == nil {
 		return delta, next, nil
 	}
@@ -267,12 +271,12 @@ func (engine *Engine) extractValidDelta(ctx context.Context, work chapterWork) (
 		return story.StateDelta{}, story.State{}, err
 	}
 
-	repaired, err = engine.normalizeDelta(work.context.NextChapter, work.context.State, repaired)
+	repaired, err = engine.normalizeDelta(work.context.NextChapter, work.canonicalBase, repaired)
 	if err != nil {
 		return story.StateDelta{}, story.State{}, err
 	}
 
-	next, err = story.ApplyDelta(work.context.State, repaired)
+	next, err = story.ApplyDelta(work.canonicalBase, repaired)
 	if err != nil {
 		return story.StateDelta{}, story.State{}, fmt.Errorf("书记员状态修复后仍无效: %w", err)
 	}
@@ -327,23 +331,28 @@ func (engine *Engine) reviseChapter(ctx context.Context, work chapterWork) (chap
 	return engine.inspectChapter(ctx, work, "revised")
 }
 
-func (engine *Engine) observeReader(ctx context.Context, bible story.StoryBible, previous story.ReaderState, previousChapter string, summaries []story.ChapterSummary, chapter string, number int) (story.ReaderState, error) {
-	input, err := asPrettyJSON(readerInput{TargetReader: bible.TargetReader, NarrativePromise: bible.NarrativePromise,
-		PreviousState: previous, PreviousChapter: previousChapter, RecentSummaries: recentSummaries(summaries, recentSummaryLimit),
-		CurrentNumber: number, CurrentChapter: chapter})
+func (engine *Engine) observeReader(ctx context.Context, targetReader story.TargetReader, previousChapter string, summaries []story.ChapterSummary, chapter string, number int) (story.ReaderObservation, error) {
+	recent, early := readerVisibleHistory(chapter, summaries)
+	input, err := asPrettyJSON(readerInput{
+		TargetReader: targetReader, PreviousChapter: previousChapter,
+		RecentSummaries: recent, EarlyRelevantSummaries: early,
+		CurrentNumber: number, CurrentChapter: chapter,
+	})
 	if err != nil {
-		return story.ReaderState{}, err
+		return story.ReaderObservation{}, err
 	}
-	reader, err := generateJSON[story.ReaderState](ctx, engine, chapterStage(number, "reader"), "reader", "reader_state", input, readerMaxOutputTokens, "none")
+	observation, err := generateJSON[story.ReaderObservation](ctx, engine, chapterStage(number, "reader"), "reader", "reader_observation", input, readerMaxOutputTokens, "none")
 	if err != nil {
-		return story.ReaderState{}, err
+		return story.ReaderObservation{}, err
 	}
-	// 保存 Reader 的原始主观判断。程序只校验章节号和动作枚举，不能因
-	// losing_patience_with 非空就擅自把 continue 改成 adjust。
-	if err := story.ValidateReaderState(reader, number); err != nil {
-		return story.ReaderState{}, err
+
+	// Reader 只交付主观观察。程序验证章节归属，不从任何感受字段推导
+	// Writer 指令或 Replanner 动作。
+	if err := story.ValidateReaderObservation(observation, number); err != nil {
+		return story.ReaderObservation{}, err
 	}
-	return reader, nil
+
+	return observation, nil
 }
 
 func chapterStage(number int, stage string) string {

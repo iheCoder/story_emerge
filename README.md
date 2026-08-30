@@ -1,11 +1,11 @@
 # story-emerge
 
-story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文学创作编译成 scene 清单，而是让作者在正典和全书方向内自由写作，并让一个具体目标读者持续反馈“我为什么还想看”。
+story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文学创作编译成 scene 清单，而是让作者在正典和全书方向内自由写作，并让一个具体目标读者在每章后独立反馈阅读体验。
 
     初始化：Architect → 目标读者 + 叙事承诺 + 大纲 + 正典初态
     每章：Writer → Recorder → Canon Checker → Reader → 原子提交
             ↑          正典失败时仅完整修订一次
-    Replanner 只在当前故事运动完成、阻塞或 Reader 要求时出现。
+    Replanner 只在当前故事运动完成或阻塞时出现；Reader 不控制工作流。
 
 这些角色都是中文 Prompt，不是独立进程。项目不使用数据库、向量库、工作流框架或第三方 Go 依赖。
 
@@ -44,12 +44,12 @@ Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后�
     ├── chapters/                正文
     ├── deltas/                  正文造成的事实变化
     ├── canon-reviews/           正典检查
-    ├── reader-checkpoints/      目标读者观察，也是下一章 Writer 使用的状态
+    ├── reader-observations/     每章独立读者观察，只供下一章 Writer 参考
     ├── checkpoints/             完整正典快照
     ├── .work/                   未通过或中断的现场
     └── usage.jsonl              调用与 token 审计
 
-正文、状态、Reader 和可选新大纲全部写好后才原子替换 HEAD。中断后仍从最后一个完整章节继续。
+正文、状态、Reader Observation 和可选新大纲全部写好后才原子替换 HEAD。中断后仍从最后一个完整章节继续。
 
 ## 验证
 
