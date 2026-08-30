@@ -1,10 +1,8 @@
 package workflow
 
 import (
-	"context"
 	"testing"
 
-	"story_emerge/internal/store"
 	"story_emerge/internal/story"
 )
 
@@ -45,54 +43,22 @@ func TestReaderVisibleHistoryDoesNotFillEarlyWindowWithoutEvidence(t *testing.T)
 	}
 }
 
-func TestWriterSummaryProjectionDoesNotMutateCanonicalHistory(t *testing.T) {
-	// 场景：完整状态已经有五章摘要，而 Writer 只需要最近三章。
-	// 预期：裁剪发生在副本上，作为提交基底的原状态仍保留全部摘要。
-	full := story.State{Chapter: 5, Summaries: []story.ChapterSummary{
-		{Number: 1}, {Number: 2}, {Number: 3}, {Number: 4}, {Number: 5},
-	}}
-	projected := full
-	projected.Summaries = recentSummaries(full.Summaries, recentSummaryLimit)
+func TestRecentSummariesReturnsIndependentWindow(t *testing.T) {
+	// 场景：已经提交五份独立摘要，而 Writer 只读取最近三份。
+	// 预期：返回窗口拥有独立底层数组，修改上下文不会污染持久化来源。
+	full := numberedSummaries(5)
+	window := recentSummaries(full, recentSummaryLimit)
+	window[0].Number = 99
 
-	if len(projected.Summaries) != 3 {
-		t.Fatalf("Writer 摘要窗口错误: %#v", projected.Summaries)
-	}
-	if len(full.Summaries) != 5 || full.Summaries[0].Number != 1 {
-		t.Fatalf("Writer 投影污染完整正典历史: %#v", full.Summaries)
-	}
-}
-
-func TestRecorderAppliesDeltaToFullCanonicalHistory(t *testing.T) {
-	// 场景：Writer 只看最近三章，但本章开始前已经提交五章摘要。
-	// 预期：Recorder 应用第六章差量后保留全部六章，而不是只剩窗口加新章。
-	full := story.State{Chapter: 5, StoryStatus: "ongoing", Summaries: numberedSummaries(5),
-		OutlineProgress: story.OutlineProgress{CurrentMovementID: "m", Status: "ongoing"}}
-	projected := full
-	projected.Summaries = recentSummaries(full.Summaries, recentSummaryLimit)
-	delta := story.StateDelta{Chapter: 6, Summary: story.ChapterSummary{Number: 6},
-		OutlineProgress: story.OutlineProgress{CurrentMovementID: "m", Status: "ongoing"}, StoryStatus: "ongoing"}
-	fake := &scriptedGenerator{inputs: map[string]string{}, responses: map[string]string{"chapter_006_record": mustJSON(delta)}}
-	engine, err := New(fake, store.New(t.TempDir()), 5, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, next, err := engine.extractValidDelta(context.Background(), chapterWork{
-		context: writerContext{State: projected, NextChapter: 6}, canonicalBase: full,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(next.Summaries) != 6 || next.Summaries[0].Number != 1 {
-		t.Fatalf("Recorder 用 Writer 投影覆盖了完整历史: %#v", next.Summaries)
+	if len(window) != 3 || full[2].Number != 3 {
+		t.Fatalf("摘要窗口污染来源: full=%#v window=%#v", full, window)
 	}
 }
 
 func numberedSummaries(count int) []story.ChapterSummary {
-	summaries := make([]story.ChapterSummary, count)
-	for index := range summaries {
-		summaries[index].Number = index + 1
+	result := make([]story.ChapterSummary, count)
+	for index := range result {
+		result[index].Number = index + 1
 	}
-
-	return summaries
+	return result
 }

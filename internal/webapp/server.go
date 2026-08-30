@@ -204,14 +204,14 @@ func translateEvent(event workflow.Event) string {
 		return strings.Replace(event.Message, "已提交", "已经准备好了", 1)
 	case stage == "chapter":
 		return event.Message + "正在形成"
-	case strings.HasSuffix(stage, "_replan"):
+	case strings.Contains(stage, "architect_replan"):
 		return chapterLabel(stage) + "正在重新寻找方向"
 	case strings.HasSuffix(stage, "_write"):
 		return chapterLabel(stage) + "正在写下发生的一切"
-	case strings.Contains(stage, "_record"):
-		return "记住这一章带来的改变"
-	case strings.Contains(stage, "_canon"):
-		return "确认这一章没有遗忘已经发生的事"
+	case strings.Contains(stage, "_editor_review"):
+		return "编辑正在判断这一章是否真的需要干预"
+	case strings.Contains(stage, "_editor_finalize"):
+		return "记住这一章真正重要的长期变化"
 	case strings.Contains(stage, "_reader"):
 		return "听听那个等待故事的人此刻在意什么"
 	case strings.Contains(stage, "_revise"):
@@ -340,10 +340,14 @@ func loadSnapshot(current job) (storySnapshot, error) {
 	if err != nil {
 		return snapshot, err
 	}
-	snapshot.Title, snapshot.Logline = bible.Title, bible.Logline
+	snapshot.Title, snapshot.Logline = bible.Title, bible.Premise
 	snapshot.Idea, snapshot.CreatedAt = project.Idea, project.CreatedAt
 	snapshot.CurrentChapter, snapshot.StoryStatus = state.Chapter, state.StoryStatus
-	for _, summary := range state.Summaries {
+	summaries, err := files.LoadSummaries()
+	if err != nil {
+		return snapshot, err
+	}
+	for _, summary := range summaries {
 		snapshot.Chapters = append(snapshot.Chapters, chapterMeta{
 			Number: summary.Number, Title: summary.Title, Summary: summary.Summary,
 		})
@@ -400,7 +404,11 @@ func loadChapter(root string, number int) (chapterResponse, error) {
 		return chapterResponse{}, fmt.Errorf("读取章节失败")
 	}
 	title := fmt.Sprintf("第 %d 章", number)
-	for _, summary := range state.Summaries {
+	summaries, err := files.LoadSummaries()
+	if err != nil {
+		return chapterResponse{}, fmt.Errorf("读取章节摘要失败")
+	}
+	for _, summary := range summaries {
 		if summary.Number == number {
 			title = summary.Title
 			break

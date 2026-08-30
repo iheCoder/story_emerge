@@ -1,5 +1,6 @@
 {
-  "type": "object", "additionalProperties": false,
+  "type": "object",
+  "additionalProperties": false,
   "required": ["bible", "outline", "initial_state"],
   "properties": {
     "bible": {"$ref": "#/$defs/bible"},
@@ -7,77 +8,103 @@
     "initial_state": {"$ref": "#/$defs/initial_state"}
   },
   "$defs": {
-    "string_array": {"type": "array", "items": {"type": "string"}},
+    "strings": {"type": "array", "items": {"type": "string"}},
     "target_reader": {
       "type": "object", "additionalProperties": false,
       "required": ["name", "reading_history", "craves", "forgives", "drops_when", "binge_triggers"],
       "properties": {
         "name": {"type": "string"}, "reading_history": {"type": "string"},
-        "craves": {"$ref": "#/$defs/string_array"}, "forgives": {"$ref": "#/$defs/string_array"},
-        "drops_when": {"$ref": "#/$defs/string_array"}, "binge_triggers": {"$ref": "#/$defs/string_array"}
+        "craves": {"$ref": "#/$defs/strings"}, "forgives": {"$ref": "#/$defs/strings"},
+        "drops_when": {"$ref": "#/$defs/strings"}, "binge_triggers": {"$ref": "#/$defs/strings"}
       }
     },
     "promise": {
       "type": "object", "additionalProperties": false,
       "required": ["primary_pleasure", "supporting_pleasures", "must_deliver", "must_not_become"],
       "properties": {
-        "primary_pleasure": {"type": "string"}, "supporting_pleasures": {"$ref": "#/$defs/string_array"},
-        "must_deliver": {"$ref": "#/$defs/string_array"}, "must_not_become": {"$ref": "#/$defs/string_array"}
+        "primary_pleasure": {"type": "string"},
+        "supporting_pleasures": {"$ref": "#/$defs/strings"},
+        "must_deliver": {"$ref": "#/$defs/strings"},
+        "must_not_become": {"$ref": "#/$defs/strings"}
       }
     },
     "style": {
-      "type": "object", "additionalProperties": false, "required": ["point_of_view", "tone", "prose_rules"],
-      "properties": {"point_of_view": {"type": "string"}, "tone": {"type": "string"}, "prose_rules": {"$ref": "#/$defs/string_array"}}
+      "type": "object", "additionalProperties": false,
+      "required": ["point_of_view", "tone", "prose_rules"],
+      "properties": {
+        "point_of_view": {"type": "string"}, "tone": {"type": "string"},
+        "prose_rules": {"$ref": "#/$defs/strings"}
+      }
     },
     "character": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "name", "role", "trait", "desire", "weakness", "secret"],
-      "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"}, "trait": {"type": "string"}, "desire": {"type": "string"}, "weakness": {"type": "string"}, "secret": {"type": "string"}}
+      "properties": {
+        "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+        "trait": {"type": "string"}, "desire": {"type": "string"},
+        "weakness": {"type": "string"}, "secret": {"type": "string"}
+      }
     },
     "bible": {
       "type": "object", "additionalProperties": false,
-      "required": ["title", "genre", "logline", "target_reader", "narrative_promise", "ending_direction", "protagonist_id", "style", "characters", "canon_rules", "recurring_motifs"],
+      "required": ["title", "premise", "story_spine", "target_reader", "narrative_promise", "characters", "world_rules", "stable_facts", "ending_direction", "style"],
       "properties": {
-        "title": {"type": "string"}, "genre": {"type": "string"}, "logline": {"type": "string"},
-        "target_reader": {"$ref": "#/$defs/target_reader"}, "narrative_promise": {"$ref": "#/$defs/promise"},
-        "ending_direction": {"type": "string"}, "protagonist_id": {"type": "string"}, "style": {"$ref": "#/$defs/style"},
+        "title": {"type": "string"}, "premise": {"type": "string"}, "story_spine": {"type": "string"},
+        "target_reader": {"$ref": "#/$defs/target_reader"},
+        "narrative_promise": {"$ref": "#/$defs/promise"},
         "characters": {"type": "array", "items": {"$ref": "#/$defs/character"}},
-        "canon_rules": {"$ref": "#/$defs/string_array"}, "recurring_motifs": {"$ref": "#/$defs/string_array"}
+        "world_rules": {"$ref": "#/$defs/strings"}, "stable_facts": {"$ref": "#/$defs/strings"},
+        "ending_direction": {"type": "string"}, "style": {"$ref": "#/$defs/style"}
       }
     },
-    "movement": {
+    "arc": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "dramatic_pressure", "intended_change", "expected_reward", "completion_signals"],
-      "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "dramatic_pressure": {"type": "string"}, "intended_change": {"type": "string"}, "expected_reward": {"type": "string"}, "completion_signals": {"$ref": "#/$defs/string_array"}}
+      "required": ["name", "purpose", "completion_signals"],
+      "properties": {
+        "name": {"type": "string"}, "purpose": {"type": "string"},
+        "completion_signals": {"$ref": "#/$defs/strings"}
+      }
+    },
+    "track": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "role", "direction", "status"],
+      "properties": {
+        "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+        "direction": {"type": "string"}, "status": {"type": "string", "enum": ["ongoing", "completed"]}
+      }
     },
     "outline": {
       "type": "object", "additionalProperties": false,
-      "required": ["version", "core_conflict", "protagonist_drive", "current_movement_id", "movements"],
-	  "properties": {"version": {"type": "integer"}, "core_conflict": {"type": "string"}, "protagonist_drive": {"type": "string"}, "current_movement_id": {"type": "string"}, "movements": {"type": "array", "items": {"$ref": "#/$defs/movement"}}}
-    },
-    "knowledge": {
-      "type": "object", "additionalProperties": false, "required": ["fact_id", "belief", "confidence"],
-      "properties": {"fact_id": {"type": "string"}, "belief": {"type": "string"}, "confidence": {"type": "integer", "minimum": 0, "maximum": 100}}
-    },
-    "relationship": {
-      "type": "object", "additionalProperties": false, "required": ["target_id", "stance", "trust", "tension", "note"],
-      "properties": {"target_id": {"type": "string"}, "stance": {"type": "string"}, "trust": {"type": "integer", "minimum": 0, "maximum": 100}, "tension": {"type": "integer", "minimum": 0, "maximum": 100}, "note": {"type": "string"}}
+      "required": ["version", "current_arc", "tracks", "future_directions"],
+      "properties": {
+        "version": {"type": "integer"}, "current_arc": {"$ref": "#/$defs/arc"},
+        "tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}},
+        "future_directions": {"$ref": "#/$defs/strings"}
+      }
     },
     "character_state": {
-      "type": "object", "additionalProperties": false, "required": ["character_id", "goal", "emotion", "location", "knowledge", "relationships"],
-      "properties": {"character_id": {"type": "string"}, "goal": {"type": "string"}, "emotion": {"type": "string"}, "location": {"type": "string"}, "knowledge": {"type": "array", "items": {"$ref": "#/$defs/knowledge"}}, "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}}}
+      "type": "object", "additionalProperties": false,
+      "required": ["character_id", "state"],
+      "properties": {"character_id": {"type": "string"}, "state": {"type": "string"}}
     },
-    "fact": {
-      "type": "object", "additionalProperties": false, "required": ["id", "description", "visibility", "since_chapter"],
-      "properties": {"id": {"type": "string"}, "description": {"type": "string"}, "visibility": {"type": "string"}, "since_chapter": {"type": "integer"}}
+    "durable_state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description"],
+      "properties": {"id": {"type": "string"}, "description": {"type": "string"}}
     },
-    "thread": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "kind", "status", "progress", "opened_chapter", "last_touched_chapter"],
-      "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}, "status": {"type": "string", "enum": ["active", "dormant", "resolved"]}, "progress": {"type": "string"}, "opened_chapter": {"type": "integer"}, "last_touched_chapter": {"type": "integer"}}
+    "track_progress": {
+      "type": "object", "additionalProperties": false,
+      "required": ["track_id", "progress"],
+      "properties": {"track_id": {"type": "string"}, "progress": {"type": "string"}}
     },
     "initial_state": {
-      "type": "object", "additionalProperties": false, "required": ["characters", "facts", "threads"],
-      "properties": {"characters": {"type": "array", "items": {"$ref": "#/$defs/character_state"}}, "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}}, "threads": {"type": "array", "items": {"$ref": "#/$defs/thread"}}}
+      "type": "object", "additionalProperties": false,
+      "required": ["character_states", "durable_states", "track_progress"],
+      "properties": {
+        "character_states": {"type": "array", "items": {"$ref": "#/$defs/character_state"}},
+        "durable_states": {"type": "array", "items": {"$ref": "#/$defs/durable_state"}},
+        "track_progress": {"type": "array", "items": {"$ref": "#/$defs/track_progress"}}
+      }
     }
   }
 }

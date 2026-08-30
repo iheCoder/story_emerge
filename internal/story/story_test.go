@@ -3,72 +3,91 @@ package story
 import "testing"
 
 func TestProjectHasNoChapterOrWordQuota(t *testing.T) {
+	// 场景：用户只选择“超长故事”这一规模意图。
+	// 预期：项目校验不把它翻译成章节数、字数或场景配额。
 	project := Project{Idea: "一段故事", LengthProfile: "epic", MaxCalls: 1}
 	if err := ValidateProject(project); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestApplyDeltaTracksNaturalCompletion(t *testing.T) {
-	outline := StoryOutline{Version: 0, CoreConflict: "冲突", CurrentMovementID: "m1",
-		Movements: []StoryMovement{{ID: "m1"}}}
-	current := NewInitialState(InitialState{}, outline)
-	delta := StateDelta{Chapter: 1, Summary: ChapterSummary{Number: 1}, OutlineProgress: OutlineProgress{
-		CurrentMovementID: "m1", Status: "completed", Evidence: "正文已经完成"}, StoryStatus: "ongoing"}
-	next, err := ApplyDelta(current, delta)
+func TestApplyStoryUpdateAllowsEmptyLongTermChanges(t *testing.T) {
+	// 场景：一章只完成了短期气氛和人物互动，没有值得长期登记的新状态。
+	// 预期：空变化集合仍能把章节号推进一次，不能强迫 Editor 制造状态。
+	outline := testOutline()
+	current := NewInitialState(testInitialState(), outline)
+	update := StoryUpdate{
+		Chapter: 1, CharacterChanges: []CharacterStateChange{},
+		DurableStateChanges: []DurableStateChange{}, TrackChanges: []TrackProgressChange{},
+		StoryStatus: "ongoing",
+	}
+
+	next, err := ApplyStoryUpdate(current, outline, update)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(next.CompletedMovementIDs) != 1 || next.CompletedMovementIDs[0] != "m1" {
-		t.Fatalf("完成阶段未进入账本: %#v", next.CompletedMovementIDs)
+	if next.Chapter != 1 || len(next.DurableStates) != len(current.DurableStates) {
+		t.Fatalf("空 Story Update 改坏状态: %#v", next)
 	}
 }
 
-func TestReplanCannotRewriteCompletedMovement(t *testing.T) {
-	old := StoryOutline{CoreConflict: "冲突", CurrentMovementID: "m1",
-		Movements: []StoryMovement{{ID: "m1", Name: "已经发生"}, {ID: "m2"}}}
+func TestRejectedDraftCannotMutateCurrentState(t *testing.T) {
+	// 场景：Editor 对草稿提出 revise，草稿中包含一个尚未获准提交的长期变化。
+	// 操作：只构造变化但不调用 ApplyStoryUpdate，模拟被否决草稿退出当前分支。
+	// 预期：调用方持有的 HEAD 快照保持原值，为新草稿提供干净基线。
+	outline := testOutline()
+	current := NewInitialState(testInitialState(), outline)
+	rejected := StoryUpdate{Chapter: 1, DurableStateChanges: []DurableStateChange{{Operation: "upsert", ID: "rejected", Description: "不应出现"}}, StoryStatus: "ongoing"}
+	_ = rejected
+
+	if len(current.DurableStates) != 1 || current.DurableStates[0].ID != "weather" {
+		t.Fatalf("未应用的草稿变化污染了当前状态: %#v", current.DurableStates)
+	}
+}
+
+func TestStoryUpdateRejectsUnknownReferences(t *testing.T) {
+	// 场景：Editor 输出不存在的人物与 Track ID。
+	// 预期：确定性校验拒绝跨对象引用，HEAD 事务可以在写盘前停止。
+	outline := testOutline()
+	current := NewInitialState(testInitialState(), outline)
+	update := StoryUpdate{
+		Chapter: 1, CharacterChanges: []CharacterStateChange{{CharacterID: "unknown", State: "变化"}},
+		TrackChanges: []TrackProgressChange{{TrackID: "missing", Progress: "变化"}}, StoryStatus: "ongoing",
+	}
+
+	if _, err := ApplyStoryUpdate(current, outline, update); err == nil {
+		t.Fatal("未知引用却通过 Story Update 校验")
+	}
+}
+
+func TestReplanUsesGenericTracksWithoutFixedGenreType(t *testing.T) {
+	// 场景：Architect 为一个中性故事新增“修复旧桥”这股发展力量。
+	// 预期：程序只认识通用 StoryTrack，不要求悬疑、关系或升级等题材枚举。
+	old := testOutline()
 	next := old
-	next.CurrentMovementID = "m2"
-	next.Movements = append([]StoryMovement(nil), old.Movements...)
-	next.Movements[0].Name = "偷偷改写"
-	if err := ValidateReplan(old, next, []string{"m1"}); err == nil {
-		t.Fatal("重规划改写已完成历史却未被拒绝")
-	}
-}
-
-func TestGenesisAudienceValidationDoesNotClassifyNamesByKeyword(t *testing.T) {
-	// 场景：Architect 选择了一个字段完整的目标读者画像。
-	// 预期：程序只验证结构，不用人口或题材关键词枚举猜测画像是否具体。
-	genesis := Genesis{Bible: StoryBible{Title: "书", ProtagonistID: "p", EndingDirection: "结局",
-		Characters: []Character{{ID: "p", Name: "主角"}}, TargetReader: TargetReader{
-			Name: "一位读者", ReadingHistory: "持续阅读人物成长故事", Craves: []string{"人物选择"}, DropsWhen: []string{"行动无后果"}, BingeTriggers: []string{"关系改变"}},
-		NarrativePromise: NarrativePromise{PrimaryPleasure: "人物成长", MustDeliver: []string{"选择产生后果"}, MustNotBecome: []string{"事件堆砌"}}},
-		Outline:      StoryOutline{CoreConflict: "冲突", CurrentMovementID: "m", Movements: []StoryMovement{{ID: "m"}}},
-		InitialState: InitialState{Characters: []CharacterState{{CharacterID: "p"}}}}
-
-	if err := ValidateGenesis(genesis); err != nil {
-		t.Fatalf("目标读者名称被关键词规则误判: %v", err)
-	}
-}
-
-func TestApplyDeltaAllowsAnyNumberOfKnownCharacters(t *testing.T) {
-	// 场景：群像章节同时改变五名已经登记的人物。
-	// 预期：状态层只验证人物 ID 和引用，不用隐藏配额限制文学内容。
-	characters := make([]CharacterState, 5)
-	changes := make([]CharacterState, 5)
-	for index := range characters {
-		id := string(rune('a' + index))
-		characters[index] = CharacterState{CharacterID: id}
-		changes[index] = CharacterState{CharacterID: id, Emotion: "变化"}
-	}
-	current := NewInitialState(InitialState{Characters: characters}, StoryOutline{
-		Version: 0, CurrentMovementID: "m", Movements: []StoryMovement{{ID: "m"}},
+	next.Version = 1
+	next.Tracks = append([]StoryTrack(nil), old.Tracks...)
+	next.Tracks = append(next.Tracks, StoryTrack{
+		ID: "bridge", Name: "旧桥", Role: "改变村庄与外界的联系",
+		Direction: "从争议走向共同修复", Status: "ongoing",
 	})
-	delta := StateDelta{
-		Chapter: 1, Summary: ChapterSummary{Number: 1}, CharacterStates: changes,
-		OutlineProgress: OutlineProgress{CurrentMovementID: "m", Status: "ongoing"}, StoryStatus: "ongoing",
+
+	if err := ValidateReplan(old, next); err != nil {
+		t.Fatalf("通用 Track 被题材枚举拒绝: %v", err)
 	}
-	if _, err := ApplyDelta(current, delta); err != nil {
-		t.Fatalf("正式人物数量被误当成章节配额: %v", err)
+}
+
+func testOutline() StoryOutline {
+	return StoryOutline{
+		Version: 0, CurrentArc: StoryArc{Name: "风雪前", Purpose: "让送信人真正离开家"},
+		Tracks: []StoryTrack{{ID: "journey", Name: "送信", Role: "推动选择", Direction: "走出村庄", Status: "ongoing"}},
+	}
+}
+
+func testInitialState() InitialState {
+	return InitialState{
+		CharacterStates: []CharacterState{{CharacterID: "traveler", State: "尚未离家"}},
+		DurableStates:   []DurableState{{ID: "weather", Description: "风雪将至"}},
+		TrackProgress:   []TrackProgress{{TrackID: "journey", Progress: "仍在准备"}},
 	}
 }

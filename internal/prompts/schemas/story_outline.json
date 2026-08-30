@@ -1,13 +1,28 @@
 {
-  "type": "object", "additionalProperties": false,
-  "required": ["version", "core_conflict", "protagonist_drive", "current_movement_id", "movements"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "current_arc", "tracks", "future_directions"],
   "properties": {
-    "version": {"type": "integer"}, "core_conflict": {"type": "string"}, "protagonist_drive": {"type": "string"},
-    "current_movement_id": {"type": "string"},
-    "movements": {"type": "array", "items": {
+    "version": {"type": "integer"},
+    "current_arc": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "dramatic_pressure", "intended_change", "expected_reward", "completion_signals"],
-      "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "dramatic_pressure": {"type": "string"}, "intended_change": {"type": "string"}, "expected_reward": {"type": "string"}, "completion_signals": {"type": "array", "items": {"type": "string"}}}
-    }}
+      "required": ["name", "purpose", "completion_signals"],
+      "properties": {
+        "name": {"type": "string"}, "purpose": {"type": "string"},
+        "completion_signals": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "name", "role", "direction", "status"],
+        "properties": {
+          "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+          "direction": {"type": "string"}, "status": {"type": "string", "enum": ["ongoing", "completed"]}
+        }
+      }
+    },
+    "future_directions": {"type": "array", "items": {"type": "string"}}
   }
 }

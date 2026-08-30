@@ -5,45 +5,33 @@ import (
 	"strings"
 )
 
-// RenderStory 把机器可校验的故事圣经投影成读者友好的 Markdown。
+// RenderStory 把 Story Bible 投影成便于人工检查的 Markdown。
 func RenderStory(bible StoryBible) string {
-	// 这是 Bible 的确定性视图，不调用模型、不补写内容；同一份 Bible 始终得到同一份 Markdown。
-
-	// 写入书名和一句话卖点，先让读者知道这本书讲什么。
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "# %s\n\n", bible.Title)
-	fmt.Fprintf(&builder, "> %s\n\n", bible.Logline)
-
-	// 按 Bible 的业务区块输出类型、承诺和结局方向。
-	writeSection(&builder, "类型", bible.Genre)
+	writeSection(&builder, "故事前提", bible.Premise)
+	writeSection(&builder, "Story Spine", bible.StorySpine)
 	writeSection(&builder, "目标读者", bible.TargetReader.Name+"："+bible.TargetReader.ReadingHistory)
 	writeSection(&builder, "首要阅读快感", bible.NarrativePromise.PrimaryPleasure)
 	writeSection(&builder, "最终方向", bible.EndingDirection)
 
-	// 输出阶段、人物、正典规则和反复意象。
 	writeCharacters(&builder, bible.Characters)
-	writeList(&builder, "世界与正典规则", bible.CanonRules)
-	writeList(&builder, "反复意象", bible.RecurringMotifs)
-
-	// 最后输出全书文风规则并返回完整视图。
+	writeList(&builder, "世界规则", bible.WorldRules)
+	writeList(&builder, "稳定事实", bible.StableFacts)
 	writeStyle(&builder, bible.Style)
+
 	return builder.String()
 }
 
-// RenderStatus 展示 HEAD 对应的当前世界，而不是重新让模型总结一次。
+// RenderStatus 只展示 HEAD 的长期当前态，不把短期章节流水重新塞回状态页。
 func RenderStatus(bible StoryBible, state State) string {
-	// 状态页只展示 HEAD 对应快照的投影，帮助人工判断下一步，又不会引入新的事实。
-
-	// 标明当前书名和提交章节，建立状态时间边界。
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "# 《%s》当前状态\n\n", bible.Title)
-	fmt.Fprintf(&builder, "已提交到第 %d 章。\n\n", state.Chapter)
-	fmt.Fprintf(&builder, "故事状态：%s；当前阶段：%s（%s）。\n\n", state.StoryStatus, state.OutlineProgress.CurrentMovementID, state.OutlineProgress.Status)
+	fmt.Fprintf(&builder, "已提交到第 %d 章；故事状态：%s。\n\n", state.Chapter, state.StoryStatus)
 
-	// 输出人物动态、剧情线账本和最近章节记忆。
-	writeCharacterStates(&builder, bible, state.Characters)
-	writeThreads(&builder, state.Threads)
-	writeRecentSummaries(&builder, state.Summaries)
+	writeCharacterStates(&builder, bible, state.CharacterStates)
+	writeDurableStates(&builder, state.DurableStates)
+	writeTrackProgress(&builder, state.TrackProgress)
 
 	return builder.String()
 }
@@ -100,49 +88,30 @@ func writeStyle(builder *strings.Builder, style StyleGuide) {
 
 // writeCharacterStates 将动态人物状态中的 ID 投影为姓名后输出。
 func writeCharacterStates(builder *strings.Builder, bible StoryBible, states []CharacterState) {
-	// 先建立 ID 到姓名的投影，正文只显示人名；若遇到未知 ID，空名称也会暴露状态异常。
-	// 建立人物 ID 到姓名的显示投影。
-	nameByID := make(map[string]string, len(bible.Characters))
+	names := make(map[string]string, len(bible.Characters))
 	for _, character := range bible.Characters {
-		nameByID[character.ID] = character.Name
+		names[character.ID] = character.Name
 	}
 
-	// 输出目标、情绪、位置和关系动态。
-	builder.WriteString("## 人物现状\n\n")
+	builder.WriteString("## 人物长期现状\n\n")
 	for _, state := range states {
-		fmt.Fprintf(builder, "### %s\n\n", nameByID[state.CharacterID])
-		fmt.Fprintf(builder, "- 目标：%s\n- 情绪：%s\n- 位置：%s\n", state.Goal, state.Emotion, state.Location)
-		for _, relation := range state.Relationships {
-			fmt.Fprintf(builder, "- 对 %s：%s（信任 %d，张力 %d）\n",
-				nameByID[relation.TargetID], relation.Note, relation.Trust, relation.Tension)
-		}
-		builder.WriteString("\n")
-	}
-}
-
-// writeThreads 输出剧情线账本及其推进/回收信息。
-func writeThreads(builder *strings.Builder, threads []PlotThreadState) {
-	// 账本同时展示类型、生命周期、最近推进和计划回收，帮助人判断节奏而非只看一句摘要。
-	// 输出所有剧情线的生命周期和推进账本。
-	builder.WriteString("## 剧情线账本\n\n")
-	for _, thread := range threads {
-		fmt.Fprintf(builder, "- **%s** [%s/%s]：%s（最近推进：第 %d 章）\n",
-			thread.Name, thread.Kind, thread.Status, thread.Progress,
-			thread.LastTouchedChapter)
+		fmt.Fprintf(builder, "- **%s**：%s\n", names[state.CharacterID], state.State)
 	}
 	builder.WriteString("\n")
 }
 
-// writeRecentSummaries 只输出最近三章摘要，控制状态页长度。
-func writeRecentSummaries(builder *strings.Builder, summaries []ChapterSummary) {
-	// 状态页只保留最近三章，控制可读长度；完整历史仍在 checkpoint 和章节文件中。
-	// 计算最近三章的窗口。
-	builder.WriteString("## 最近章节\n\n")
-	start := max(0, len(summaries)-3)
+func writeDurableStates(builder *strings.Builder, states []DurableState) {
+	builder.WriteString("## 重要全局状态\n\n")
+	for _, state := range states {
+		fmt.Fprintf(builder, "- **%s**：%s\n", state.ID, state.Description)
+	}
+	builder.WriteString("\n")
+}
 
-	// 按原提交顺序输出摘要。
-	for _, summary := range summaries[start:] {
-		fmt.Fprintf(builder, "- 第 %d 章《%s》：%s\n", summary.Number, summary.Title, summary.Summary)
+func writeTrackProgress(builder *strings.Builder, progress []TrackProgress) {
+	builder.WriteString("## Story Track 实际进度\n\n")
+	for _, item := range progress {
+		fmt.Fprintf(builder, "- **%s**：%s\n", item.TrackID, item.Progress)
 	}
 	builder.WriteString("\n")
 }

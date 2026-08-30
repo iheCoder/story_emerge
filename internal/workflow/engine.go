@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"story_emerge/internal/llm"
@@ -22,17 +23,31 @@ type Event struct {
 // Reporter 允许入口层订阅进度；Engine 在无 reporter 时仍可无界面运行。
 type Reporter func(Event)
 
-// Engine 串联“上下文 -> 正文 -> 记账 -> 正典检查 -> Reader -> 提交”的状态机。
+// Engine 串联“上下文 -> Writer -> Editor -> Story Update -> Reader -> 提交”的状态机。
 // usedCalls 从 usage.jsonl 恢复，maxCalls 在整个项目生命周期内生效而非仅限当前进程。
 type Engine struct {
 	generator llm.Generator
 	store     *store.Store
 	reporter  Reporter
+	options   Options
 	maxCalls  int
 	usedCalls int
 }
 
+// Options 只承载显式、可审计的工作流变体。
+// 默认生产入口不传任何选项；实验代码可以注入 Writer 倾向，但不能改写 Bible、Outline、
+// Editor 权限或章节提交协议，因此实验变量不会悄悄扩散成新的生产规则。
+type Options struct {
+	WriterGuidance string
+}
+
 func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Reporter) (*Engine, error) {
+	return NewWithOptions(generator, files, maxCalls, reporter, Options{})
+}
+
+// NewWithOptions 创建带显式实验选项的 Engine。
+// 该入口主要供独立 eval 使用；空 Options 与 New 的生产行为完全一致。
+func NewWithOptions(generator llm.Generator, files *store.Store, maxCalls int, reporter Reporter, options Options) (*Engine, error) {
 	// 构造时恢复历史调用计数，使重启不会重置预算；文件统计失败则拒绝启动，
 	// 因为在未知成本下继续生成可能超出用户设定。
 	// 恢复已有成功调用数，保证重启不重置项目预算。
@@ -43,7 +58,7 @@ func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Rep
 
 	// 组装无状态生成器、文件仓库和可选进度播报器。
 	return &Engine{
-		generator: generator, store: files, reporter: reporter,
+		generator: generator, store: files, reporter: reporter, options: options,
 		maxCalls: maxCalls, usedCalls: usedCalls,
 	}, nil
 }
@@ -210,7 +225,23 @@ func (engine *Engine) saveMalformedOutput(stage, output string) error {
 	engine.emit(stage, "结构化输出无效，保存原文并重试一次")
 
 	// 保存原文作为修复前证据；即使修复再次失败也能人工定位供应商返回。
-	return engine.store.SaveWorking(0, stage+"-malformed.txt", output)
+	return engine.store.SaveWorking(chapterNumberFromStage(stage), stage+"-malformed.txt", output)
+}
+
+// chapterNumberFromStage 从统一阶段名恢复故障所属章节。
+// 初始化或无法识别的阶段安全归入 000，不会被误当成正式章节产物。
+func chapterNumberFromStage(stage string) int {
+	parts := strings.Split(stage, "_")
+	if len(parts) < 2 || parts[0] != "chapter" {
+		return 0
+	}
+
+	number, err := strconv.Atoi(parts[1])
+	if err != nil || number < 1 {
+		return 0
+	}
+
+	return number
 }
 
 // generateText 执行一个纯文本模型阶段，并统一去除首尾空白后补齐换行。
@@ -221,12 +252,25 @@ func generateText(
 	maxTokens int,
 	temperature float64,
 ) (string, error) {
+	return generateTextWithGuidance(ctx, engine, stage, templateName, input, "", maxTokens, temperature)
+}
+
+// generateTextWithGuidance 只为显式实验变体追加系统级创作指导。
+// 空 guidance 直接保留嵌入 Prompt 原文，确保正常生产调用不存在隐藏差异。
+func generateTextWithGuidance(
+	ctx context.Context,
+	engine *Engine,
+	stage, templateName, input, guidance string,
+	maxTokens int,
+	temperature float64,
+) (string, error) {
 	// 纯文本阶段不需要 Schema，但仍复用 generate 的预算、超时、重试和用量记录机制。
 	// 读取纯文本角色 Prompt。
 	instructions, err := prompts.Template(templateName)
 	if err != nil {
 		return "", err
 	}
+	instructions = appendExperimentalGuidance(instructions, guidance)
 
 	// 复用统一预算/重试/用量链路生成正文。
 	result, err := engine.generate(ctx, llm.Request{
@@ -239,4 +283,13 @@ func generateText(
 
 	// 规范正文首尾空白，保证保存文件拥有稳定换行。
 	return strings.TrimSpace(result.Text) + "\n", nil
+}
+
+func appendExperimentalGuidance(instructions, guidance string) string {
+	guidance = strings.TrimSpace(guidance)
+	if guidance == "" {
+		return instructions
+	}
+
+	return strings.TrimSpace(instructions) + "\n\n# 本次独立实验指导\n\n" + guidance
 }

@@ -1,61 +1,60 @@
-# 有记忆、有读者，但不给作者套施工图
+# 让故事持续生长，而不是维护完整事实数据库
 
-## 1. 问题定义
+## 1. 第一目标
 
-长篇 Agent 必须记住事实，但“记得住”不等于“想看下去”。把章数、字数、scene、转折、钩子和评分做成稳定生产约束，结果可能结构齐全，却没有清楚欲望、鲜活画面和目标读者真正期待的情绪回报。
+系统首先要持续生成值得读下去的网络小说，并让主线、人物核心状态、阅读承诺和未来发展空间保持可理解。细枝末节的零漂移不是第一目标。
 
-本项目只让程序守正典与可恢复性，把章节结构交还 Writer；同时引入一个足够具体的目标读者，让下一章知道上一章究竟留下了期待还是耐心流失。
+程序只保护章节号、ID、引用、枚举、文件完整性和 HEAD 事务等确定性不变量。情节是否自然、巧合是否过多、旧物是否曾经翻看等语义判断不伪装成程序校验。
 
-## 2. 最小角色集合
+## 2. 四个长期角色
 
-- Architect 只在初始化出现。它从用户点子确定具体目标读者、Narrative Promise、人物与世界正典、结局方向，以及不带章节槽位的 Story Outline。
-- Writer 读取大纲、已提交事实、人物知识、上一章全文、最近摘要与上一章 Reader Observation，自由决定本章的长度、场景数、节奏和结束位置。
-- Recorder 只把正文实际发生的变化写成 StateDelta。
-- Canon Checker 是提交安全门，只检查事实矛盾、知识越界、身份关系漂移、正文与账本不一致、明显截断和虚假完结。
-- Reader 模拟那一个具体读者的当下体验。它不看作者承诺、大纲、秘密或自己的历史评价，不否决章节，也不输出工作流动作。
-- Replanner 不是常驻导演。只有当前 movement 完成或被阻塞时才更新未来方向。
+- Architect 初始化 Story Bible、具体 Target Reader 和 Outline；收到 Editor 的 `replan` 后，只按需调整未来 Outline。
+- Writer 读取作品身份、当前方向、精简长期状态、上一章、最近摘要和上一章 Reader Observation，自由决定具体写法。
+- Editor 只在当前结果已经明显损害这本小说时干预，并从最终正文提炼 Story Update。
+- Reader 只读取读者可见内容并形成独立观察；它不读取自己的历史评价，也不控制工作流。
 
-## 3. Outline 不是章节清单
+不存在逐章 Director、Chapter Plan、Scene Plan、固定字数、固定转折或固定 Track 覆盖率。
 
-Story Bible（行业里常称“故事圣经”）不是第二份大纲。它回答“这究竟是哪一本书”：目标读者、叙事承诺、人物稳定身份与秘密、正典规则、文风和唯一的结局方向。初始化后它保持不变。
+## 3. Bible、Outline 与 State
 
-Story Outline 回答“这本书接下来准备往哪里走”。它由若干 movement 组成，每个 movement 只说明当前戏剧压力、希望发生的变化、应兑现的读者回报和自然完成信号。它没有起止章节，也不要求固定数量。Replanner 可改未来，但已完成 movement 必须原样保留；它只能读取 Bible 的结局方向，不能输出第二份副本。
+Story Bible 回答“这究竟是哪一本小说”，保存 Premise、Story Spine、具体目标读者、Narrative Promise、人物、世界规则、稳定事实、结局方向和风格。普通重规划没有修改权限。
 
-## 4. 一章是一笔完整事务
+Outline 回答“当前有哪些力量正在向哪里发展”：
 
-    读取 HEAD、上一章 Reader Observation 和 active outline
+- Current Arc 表示当前阶段的整体变化及自然完成信号。
+- Story Tracks 表示独立演化的力量。代码不知道它属于什么题材，也不要求 Writer 每章推进。
+- Future Directions 保存尚未成为逐章任务的未来可能。
+
+Story State 只回答“未来若忘掉会明显改变故事理解的当前状态”，包含人物长期现状、重要全局状态和 Track 实际进度。读者可见摘要独立存储，不让历史流水重新膨胀长期状态。
+
+## 4. 一章的有限干预事务
+
+    Writer 生成 Draft 1
         ↓
-    必要时产生候选 replan（尚不对外可见）
+    基础程序校验
         ↓
-    Writer 自由创作
+    Editor: accept / revise / replan
         ↓
-    Recorder 提取事实变化
+    revise 或 replan 共用两次 Intervention Budget
         ↓
-    Canon Checker ──失败──> Writer 仅修正正典问题一次，再记账复查
+    预算耗尽后最终 Draft 自动通过
         ↓
-    Reader 观察
+    Editor Finalize 只提炼 Story Update
         ↓
-    写正文、delta、canon review、reader observation、checkpoint、可选 outline
-        ↓
-    最后原子推进 HEAD
+    Apply Story Update → Reader → 原子提交
 
-Reader 调用失败也不提交，因为下一章不能在缺失上一章观察的情况下悄悄退化。候选 replan 与章节同一事务提交，避免大纲版本领先正式故事。
+`accept` 不消耗预算，并同时返回 Story Update 与读者可见摘要。`revise` 和 `replan` 各消耗一次；API 超时、JSON 修复和 Schema 错误不消耗文学预算。两次预算耗尽后 Editor 不再拥有否决权。
 
-Reader Observation 是逐章不可变产物，不是累积状态。Reader 下一次调用只读取固定目标画像、上一章全文、最近读者可见摘要、按当前章召回的早期可见摘要和当前章；上一轮 Observation 只进入下一章 Writer，不能反向进入下一次 Reader。
+`replan` 是 `Architect(mode=replan)`：只能调整 Current Arc、Track 的未来 Direction/Status 和 Future Directions。输出结构中没有 Bible、Story Spine 或正文，因此无法偷改已提交历史。
 
-## 5. 什么仍是硬约束
+## 5. Reader 单向边界
 
-- 用户明确给出的人物身份、关系、类型和已经提交的事实。
-- 人物不能使用其尚不知道的信息。
-- StateDelta 的主键、引用、章节连续性和生命周期必须有效。
-- Markdown 章节标题、禁止模型元文本。是否真的截断由 Canon Checker 根据语义判断，程序不设字符数门槛。
-- story_status 为 completed 时，已登记剧情线必须收束。
-- 调用预算、有界格式修复、有界正文修订和 HEAD 最后提交。
+第 N 章的 Reader Observation 只进入第 N+1 章 Writer 和 Editor。第 N+1 次 Reader 只读取固定目标画像、上一章、已提交的读者可见摘要、必要的早期摘要检索和当前章。
 
-主角目标不清、画面弱和没有继续阅读理由会被 Reader 明确记录并影响下一章 Writer，但项目不把主观判断伪装成提交阻断或 Replanner 指令。
+这种单向边界避免 Reader 用自己的旧评价证明新评价。Reader 的困惑与期待是创作反馈，不是 accept、revise 或 replan 指令。
 
-## 6. 长篇边界
+## 6. 事务与长篇边界
 
-epic 表示二三十万字甚至更长的故事规模意图，不等于 100 个预先编号的空槽。结构可在 movement 边界重规划；正典、人物知识、剧情线和逐章 Reader Observation 按章节持续保存。这个设计改善了长程连续性与反馈闭环，但单次三章试跑不能证明百章质量，仍需要多题材、多随机种子和真实目标读者留存评测。
+所有中间草稿和 Editor 决策先进入 `.work`。只有最终正文、Story Update、摘要、Editor 轨迹、Reader Observation、候选 Outline 和新 State 全部写入后，Store 才原子推进 HEAD。任何失败都从上一完整章节恢复。
 
-DeepSeek 三章实跑进一步确认：当前各角色仍携带完整 State，第三章 Canon 输入已达到 27366 tokens，长期成本会随状态增长而近似二次上升。项目已经完成“创作约束减法”，但尚未完成百章所需的分层记忆/检索设计；在解决这一点前不得宣称支持低成本稳定生成一百章。
+精简状态与有界 Editor 解决的是上下文膨胀和无限质量循环，不等于已经证明百章吸引力。三章实跑只能发现明显退化；长篇能力仍需要多 seed、多 trial、真实读者反馈和几十章以上的状态增长观测。

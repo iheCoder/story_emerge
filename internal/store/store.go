@@ -16,6 +16,8 @@ import (
 	"story_emerge/internal/story"
 )
 
+const maximumEditorInterventions = 2
+
 // Store 是一个以项目根目录为边界的文件仓库。
 // 它不缓存故事状态：每次读取都回到磁盘，故障恢复时不会依赖旧进程的内存快照。
 type Store struct {
@@ -237,16 +239,36 @@ func (store *Store) SaveWorking(number int, name string, data any) error {
 	return store.writeJSON(path, data)
 }
 
+// LoadSummaries 读取已提交章节的读者可见短期记忆。
+// 摘要不属于长期 Story State，因此按章节独立保存，并严格受 HEAD 边界约束。
+func (store *Store) LoadSummaries() ([]story.ChapterSummary, error) {
+	head, err := store.loadHEAD()
+	if err != nil {
+		return nil, err
+	}
+
+	summaries := make([]story.ChapterSummary, 0, head)
+	for number := 1; number <= head; number++ {
+		var summary story.ChapterSummary
+		if err := store.readJSON(summaryPath(number), &summary); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
+}
+
 // CommitChapter 把本章所有产物写好后才推进 HEAD。
 // 即使进程在最后一步前退出，旧 HEAD 仍指向完整、可读取的上一章。
-func (store *Store) CommitChapter(chapter string, delta story.StateDelta, review story.CanonReview, observation story.ReaderObservation, state story.State, outline story.StoryOutline, replanned bool) error {
-	// 依次写正文、状态差量、Canon 结果、Reader Observation 和人类视图，最后原子替换 HEAD。
+func (store *Store) CommitChapter(chapter string, update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation, state story.State, outline story.StoryOutline, replanned bool) error {
+	// 依次写正文、长期状态更新、Editor 轨迹、Reader Observation 和人类视图，最后原子替换 HEAD。
 	// 任一步失败都会保留旧 HEAD；代价是可能留下可清理的孤儿文件，但不会破坏可恢复性。
 	number := state.Chapter
-	if err := validateCommit(delta, review, observation, state, outline); err != nil {
+	if err := validateCommit(update, summary, review, observation, state, outline); err != nil {
 		return err
 	}
-	if err := store.writeChapterArtifacts(number, chapter, delta, review, observation); err != nil {
+	if err := store.writeChapterArtifacts(number, chapter, update, summary, review, observation); err != nil {
 		return err
 	}
 	if replanned {
@@ -271,13 +293,13 @@ func (store *Store) CommitChapter(chapter string, delta story.StateDelta, review
 	return store.writeText("HEAD", fmt.Sprintf("%03d\n", number))
 }
 
-func validateCommit(delta story.StateDelta, review story.CanonReview, observation story.ReaderObservation, state story.State, outline story.StoryOutline) error {
+func validateCommit(update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation, state story.State, outline story.StoryOutline) error {
 	number := state.Chapter
-	if delta.Chapter != number || delta.Summary.Number != number {
-		return fmt.Errorf("状态增量与候选检查点章节不一致: %d/%d/%d", delta.Chapter, delta.Summary.Number, number)
+	if update.Chapter != number || summary.Number != number || review.Chapter != number {
+		return fmt.Errorf("章节产物与候选检查点章节不一致: %d/%d/%d/%d", update.Chapter, summary.Number, review.Chapter, number)
 	}
-	if !review.Passed {
-		return fmt.Errorf("正典检查未通过，不能提交第 %d 章", number)
+	if review.Interventions > maximumEditorInterventions {
+		return fmt.Errorf("Editor 干预次数超过上限: %d", review.Interventions)
 	}
 	if err := story.ValidateReaderObservation(observation, number); err != nil {
 		return fmt.Errorf("读者观察无效: %w", err)
@@ -288,14 +310,17 @@ func validateCommit(delta story.StateDelta, review story.CanonReview, observatio
 	return nil
 }
 
-func (store *Store) writeChapterArtifacts(number int, chapter string, delta story.StateDelta, review story.CanonReview, observation story.ReaderObservation) error {
+func (store *Store) writeChapterArtifacts(number int, chapter string, update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation) error {
 	if err := store.writeText(chapterPath(number), chapter); err != nil {
 		return err
 	}
-	if err := store.writeJSON(deltaPath(number), delta); err != nil {
+	if err := store.writeJSON(storyUpdatePath(number), update); err != nil {
 		return err
 	}
-	if err := store.writeJSON(canonReviewPath(number), review); err != nil {
+	if err := store.writeJSON(summaryPath(number), summary); err != nil {
+		return err
+	}
+	if err := store.writeJSON(editorReviewPath(number), review); err != nil {
 		return err
 	}
 	if err := store.writeJSON(readerObservationPath(number), observation); err != nil {
@@ -386,7 +411,7 @@ func (store *Store) ensureNewRoot() error {
 // createDirectories 建立项目产物的固定目录布局。
 func (store *Store) createDirectories() error {
 	// 目录集合对应状态机的产物类型；集中创建让后续写入无需在每个阶段重复判断目录。
-	for _, directory := range []string{"chapters", "deltas", "canon-reviews", "reader-observations", "outlines", "checkpoints", ".work"} {
+	for _, directory := range []string{"chapters", "story-updates", "summaries", "editor-reviews", "reader-observations", "outlines", "checkpoints", ".work"} {
 		if err := os.MkdirAll(store.path(directory), 0o755); err != nil {
 			return fmt.Errorf("创建目录 %s 失败: %w", directory, err)
 		}
@@ -480,9 +505,6 @@ func chapterPath(number int) string {
 	return filepath.Join("chapters", fmt.Sprintf("%03d.md", number))
 }
 
-func canonReviewPath(number int) string {
-	return filepath.Join("canon-reviews", fmt.Sprintf("%03d.json", number))
-}
 func readerObservationPath(number int) string {
 	return filepath.Join("reader-observations", fmt.Sprintf("%03d.json", number))
 }
@@ -490,10 +512,16 @@ func outlinePath(version int) string {
 	return filepath.Join("outlines", fmt.Sprintf("%03d.json", version))
 }
 
-// deltaPath 返回章节状态增量 JSON 的固定编号路径。
-func deltaPath(number int) string {
-	// delta 是本章对长期状态的最小变更集，是重放和定位状态漂移的依据。
-	return filepath.Join("deltas", fmt.Sprintf("%03d.json", number))
+func storyUpdatePath(number int) string {
+	return filepath.Join("story-updates", fmt.Sprintf("%03d.json", number))
+}
+
+func summaryPath(number int) string {
+	return filepath.Join("summaries", fmt.Sprintf("%03d.json", number))
+}
+
+func editorReviewPath(number int) string {
+	return filepath.Join("editor-reviews", fmt.Sprintf("%03d.json", number))
 }
 
 // checkpointPath 返回章节提交后完整状态的固定编号路径。

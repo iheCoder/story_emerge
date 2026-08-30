@@ -1,13 +1,13 @@
 # story-emerge
 
-story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文学创作编译成 scene 清单，而是让作者在正典和全书方向内自由写作，并让一个具体目标读者在每章后独立反馈阅读体验。
+story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文学创作编译成 scene 清单，也不追求建立完整小说事实数据库；系统优先让故事持续好看，同时守住作品身份、主要方向和真正重要的长期状态。
 
-    初始化：Architect → 目标读者 + 叙事承诺 + 大纲 + 正典初态
-    每章：Writer → Recorder → Canon Checker → Reader → 原子提交
-            ↑          正典失败时仅完整修订一次
-    Replanner 只在当前故事运动完成或阻塞时出现；Reader 不控制工作流。
+    初始化：Architect → Story Bible + Story Spine + Target Reader + Outline
+    每章：Writer → 基础校验 → Editor → Story Update → Reader → 原子提交
+                         accept / revise / replan
+                         每章最多两次文学干预
 
-这些角色都是中文 Prompt，不是独立进程。项目不使用数据库、向量库、工作流框架或第三方 Go 依赖。
+长期模型角色只有 Architect、Writer、Editor 和 Reader。重规划是 Architect 的按需模式；Reader 只观察，不控制工作流。
 
 ## 快速开始
 
@@ -25,31 +25,32 @@ story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文�
       --project novels/machine-last-ten-seconds \
       --chapters 3
 
-length 可取 short、medium、long、epic。它只告诉 Architect 全书规模，不会变成固定章数、单章字数或 scene 配额。默认模型分别是 deepseek-v4-flash 和 gpt-5.6-luna。
+`length` 可取 `short`、`medium`、`long`、`epic`。它只表示全书规模，不会变成固定章数、单章字数或 scene 配额。
 
 ## Web
 
     go run ./cmd/story-emerge serve --provider auto --addr 127.0.0.1:8787
 
-Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后可以生成下一章，或让 Agent 持续写到 story_status 为 completed。
+Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后可以生成下一章，或让 Agent 持续写到 `story_status=completed`。
 
 ## 项目文件
 
     novels/<name>/
     ├── brief.md                 原始点子
-    ├── story.json / story.md    故事圣经、具体目标读者和叙事承诺
+    ├── story.json / story.md    Story Bible、Story Spine 与目标读者
     ├── project.json             模型、规模意图与调用预算
     ├── HEAD                     当前完整提交
-    ├── outlines/                初始化及触发式重规划版本
-    ├── chapters/                正文
-    ├── deltas/                  正文造成的事实变化
-    ├── canon-reviews/           正典检查
-    ├── reader-observations/     每章独立读者观察，只供下一章 Writer 参考
-    ├── checkpoints/             完整正典快照
-    ├── .work/                   未通过或中断的现场
+    ├── outlines/                Current Arc 与 Story Tracks 的版本
+    ├── chapters/                最终正文
+    ├── story-updates/           每章长期状态变化
+    ├── summaries/               独立的读者可见短期记忆
+    ├── editor-reviews/          Editor 的有限干预轨迹
+    ├── reader-observations/     每章独立读者观察
+    ├── checkpoints/             精简 Story State 快照
+    ├── .work/                   草稿与中断现场
     └── usage.jsonl              调用与 token 审计
 
-正文、状态、Reader Observation 和可选新大纲全部写好后才原子替换 HEAD。中断后仍从最后一个完整章节继续。
+正文、Story Update、摘要、Editor 轨迹、Reader Observation、检查点和可选新 Outline 全部写好后才原子替换 HEAD。
 
 ## 验证
 
@@ -57,4 +58,4 @@ Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后�
     GOTOOLCHAIN=local GOCACHE=/tmp/story-emerge-go-cache go test -race ./...
     GOTOOLCHAIN=local GOCACHE=/tmp/story-emerge-go-cache go vet ./...
 
-设计取舍见 [docs/design.md](docs/design.md)，实现与精确输入回归见 [docs/implementation-and-regeneration-log.md](docs/implementation-and-regeneration-log.md)。
+设计取舍见 [docs/design.md](docs/design.md)。

@@ -15,17 +15,14 @@
   ],
   "properties": {
     "chapter": {"type": "integer"},
-    "cares_about": {"$ref": "#/$defs/strings"},
+    "cares_about": {"type": "array", "items": {"type": "string"}},
     "understands_goal": {"type": "string"},
-    "memorable_moments": {"$ref": "#/$defs/strings"},
-    "wants_next": {"$ref": "#/$defs/strings"},
+    "memorable_moments": {"type": "array", "items": {"type": "string"}},
+    "wants_next": {"type": "array", "items": {"type": "string"}},
     "current_feeling": {"type": "string"},
-    "received_payoff": {"$ref": "#/$defs/strings"},
-    "confused_by": {"$ref": "#/$defs/strings"},
-    "losing_patience_with": {"$ref": "#/$defs/strings"},
+    "received_payoff": {"type": "array", "items": {"type": "string"}},
+    "confused_by": {"type": "array", "items": {"type": "string"}},
+    "losing_patience_with": {"type": "array", "items": {"type": "string"}},
     "turn_page_reason": {"type": "string"}
-  },
-  "$defs": {
-    "strings": {"type": "array", "items": {"type": "string"}}
   }
 }

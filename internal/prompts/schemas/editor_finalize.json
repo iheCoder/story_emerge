@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["story_update", "reader_visible_summary"],
+  "properties": {
+    "story_update": {"$ref": "#/$defs/update"},
+    "reader_visible_summary": {"$ref": "#/$defs/summary"}
+  },
+  "$defs": {
+    "character_change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["character_id", "state"],
+      "properties": {"character_id": {"type": "string"}, "state": {"type": "string"}}
+    },
+    "durable_change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation", "id", "description"],
+      "properties": {
+        "operation": {"type": "string", "enum": ["upsert", "remove"]},
+        "id": {"type": "string"}, "description": {"type": "string"}
+      }
+    },
+    "track_change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["track_id", "progress"],
+      "properties": {"track_id": {"type": "string"}, "progress": {"type": "string"}}
+    },
+    "update": {
+      "type": "object", "additionalProperties": false,
+      "required": ["chapter", "character_changes", "durable_state_changes", "track_progress_changes", "story_status"],
+      "properties": {
+        "chapter": {"type": "integer"},
+        "character_changes": {"type": "array", "items": {"$ref": "#/$defs/character_change"}},
+        "durable_state_changes": {"type": "array", "items": {"$ref": "#/$defs/durable_change"}},
+        "track_progress_changes": {"type": "array", "items": {"$ref": "#/$defs/track_change"}},
+        "story_status": {"type": "string", "enum": ["ongoing", "ending", "completed"]}
+      }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["number", "title", "summary", "key_changes"],
+      "properties": {
+        "number": {"type": "integer"}, "title": {"type": "string"}, "summary": {"type": "string"},
+        "key_changes": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

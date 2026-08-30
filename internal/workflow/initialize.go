@@ -35,7 +35,7 @@ func (engine *Engine) Initialize(ctx context.Context, project story.Project) (st
 		return story.Genesis{}, err
 	}
 
-	// 阶段二：让 Architect 建立一次性的 Bible、大纲和正典初态。
+	// 阶段二：让 Architect 建立一次性的 Bible、Outline 和精简初态。
 	genesis, usages, err := engine.generateGenesis(ctx, project)
 	if err != nil {
 		return story.Genesis{}, err
@@ -53,7 +53,7 @@ func (engine *Engine) Initialize(ctx context.Context, project story.Project) (st
 		}
 	}
 
-	engine.emit("architect", "目标读者、叙事承诺、大纲与正典初态已建立")
+	engine.emit("architect", "目标读者、Story Spine、Outline 与精简初态已建立")
 	return genesis, nil
 }
 

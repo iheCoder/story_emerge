@@ -8,41 +8,32 @@ import (
 	"story_emerge/internal/story"
 )
 
-func TestCommitPersistsReaderObservationAndOutlineBeforeHEAD(t *testing.T) {
-	// 场景：第一章的正文、Canon、Reader 和状态都有效。
-	// 预期：Reader Observation 与章节一起提交，HEAD 最后推进到 001。
+func TestCommitPersistsEditorialArtifactsBeforeHEAD(t *testing.T) {
+	// 场景：第一章正文、最终 Story Update、Editor 轨迹和 Reader 观察全部有效。
+	// 预期：所有产物先写入各自目录，HEAD 最后才推进到 001。
 	root := filepath.Join(t.TempDir(), "book")
-	files := New(root)
-	outline := story.StoryOutline{Version: 0, CoreConflict: "冲突", CurrentMovementID: "m1", Movements: []story.StoryMovement{{ID: "m1"}}}
-	genesis := story.Genesis{Bible: story.StoryBible{Title: "书"}, Outline: outline}
-	project := story.Project{Idea: "点子", LengthProfile: "long", MaxCalls: 10}
+	files, outline, genesis := createTestProject(t, root)
 
-	// 阶段一：创建第 0 章项目；尚无正文时不得产生 Reader Observation。
-	if err := files.Create(project, genesis); err != nil {
-		t.Fatal(err)
-	}
-	if observation, err := files.LoadLatestReaderObservation(); err != nil || observation != nil {
-		t.Fatalf("第 0 章不应存在读者观察: observation=%#v err=%v", observation, err)
-	}
-
-	// 阶段二：构造有效的正文状态和 Reader 观察，再执行提交。
-	delta := story.StateDelta{Chapter: 1, Summary: story.ChapterSummary{Number: 1}, OutlineProgress: story.OutlineProgress{CurrentMovementID: "m1", Status: "ongoing"}, StoryStatus: "ongoing"}
-	next, err := story.ApplyDelta(story.NewInitialState(genesis.InitialState, outline), delta)
+	update := story.StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
+	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update)
 	if err != nil {
 		t.Fatal(err)
 	}
+	summary := story.ChapterSummary{Number: 1, Title: "启程", Summary: "旅行者离开家门"}
+	review := story.EditorReviewLog{Chapter: 1, Interventions: 0}
 	observation := story.ReaderObservation{Chapter: 1, CurrentFeeling: "好奇"}
-	if err := files.CommitChapter("# 第1章 测试\n正文\n", delta, story.CanonReview{Passed: true}, observation, next, outline, false); err != nil {
+
+	if err := files.CommitChapter("# 第1章 启程\n正文\n", update, summary, review, observation, next, outline, false); err != nil {
 		t.Fatal(err)
 	}
 
-	// 阶段三：从 HEAD 投影读取，确认 Reader 与章节处于同一提交。
-	storedObservation, err := files.LoadLatestReaderObservation()
-	if err != nil {
-		t.Fatal(err)
+	stored, err := files.LoadLatestReaderObservation()
+	if err != nil || stored == nil || stored.CurrentFeeling != "好奇" {
+		t.Fatalf("Reader Observation 未提交: observation=%#v err=%v", stored, err)
 	}
-	if storedObservation == nil || storedObservation.CurrentFeeling != "好奇" {
-		t.Fatalf("读者观察未提交: %#v", storedObservation)
+	summaries, err := files.LoadSummaries()
+	if err != nil || len(summaries) != 1 || summaries[0].Title != "启程" {
+		t.Fatalf("独立摘要未提交: summaries=%#v err=%v", summaries, err)
 	}
 	head, _ := os.ReadFile(filepath.Join(root, "HEAD"))
 	if string(head) != "001\n" {
@@ -50,22 +41,22 @@ func TestCommitPersistsReaderObservationAndOutlineBeforeHEAD(t *testing.T) {
 	}
 }
 
-func TestCommitRejectsWrongReaderObservationChapterWithoutMovingHEAD(t *testing.T) {
-	// 场景：正文和 Canon 有效，但 Reader Observation 不属于本章。
-	// 预期：提交失败，HEAD 仍保持在 000，不能产生半提交章节。
+func TestCommitFailureDoesNotMoveHEAD(t *testing.T) {
+	// 场景：Reader Observation 的章节号与候选检查点不一致。
+	// 预期：提交在写入 HEAD 前失败，旧项目仍能从第 0 章恢复。
 	root := filepath.Join(t.TempDir(), "book")
-	files := New(root)
-	outline := story.StoryOutline{Version: 0, CoreConflict: "冲突", CurrentMovementID: "m1", Movements: []story.StoryMovement{{ID: "m1"}}}
-	genesis := story.Genesis{Bible: story.StoryBible{Title: "书"}, Outline: outline}
-	if err := files.Create(story.Project{Idea: "点子"}, genesis); err != nil {
-		t.Fatal(err)
-	}
-	delta := story.StateDelta{Chapter: 1, Summary: story.ChapterSummary{Number: 1}, OutlineProgress: story.OutlineProgress{CurrentMovementID: "m1", Status: "ongoing"}, StoryStatus: "ongoing"}
-	next, err := story.ApplyDelta(story.NewInitialState(genesis.InitialState, outline), delta)
+	files, outline, genesis := createTestProject(t, root)
+	update := story.StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
+	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = files.CommitChapter("# 第1章\n正文", delta, story.CanonReview{Passed: true}, story.ReaderObservation{}, next, outline, false)
+
+	err = files.CommitChapter(
+		"# 第1章\n正文", update,
+		story.ChapterSummary{Number: 1, Title: "标题", Summary: "摘要"},
+		story.EditorReviewLog{Chapter: 1}, story.ReaderObservation{}, next, outline, false,
+	)
 	if err == nil {
 		t.Fatal("错误章节的 Reader Observation 却允许提交")
 	}
@@ -73,4 +64,20 @@ func TestCommitRejectsWrongReaderObservationChapterWithoutMovingHEAD(t *testing.
 	if string(head) != "000\n" {
 		t.Fatalf("失败提交推进了 HEAD: %q", head)
 	}
+}
+
+func createTestProject(t *testing.T, root string) (*Store, story.StoryOutline, story.Genesis) {
+	t.Helper()
+
+	outline := story.StoryOutline{
+		Version: 0, CurrentArc: story.StoryArc{Name: "启程", Purpose: "走出家门"},
+		Tracks: []story.StoryTrack{{ID: "journey", Name: "旅程", Role: "推动行动", Direction: "向山外", Status: "ongoing"}},
+	}
+	genesis := story.Genesis{Bible: story.StoryBible{Title: "书"}, Outline: outline}
+	files := New(root)
+	if err := files.Create(story.Project{Idea: "点子"}, genesis); err != nil {
+		t.Fatal(err)
+	}
+
+	return files, outline, genesis
 }
