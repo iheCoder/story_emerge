@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"story_emerge/internal/store"
-	"story_emerge/internal/story"
 )
 
 // syncLibrary 发现磁盘上的已提交小说，并只补充当前进程尚未认识的项目。
@@ -55,9 +54,9 @@ func loadLibraryJob(id, root string) (*job, error) {
 		return nil, err
 	}
 	updatedAt := committedAt(root, project.CreatedAt)
-	status, phase := restoredStatus(state.Chapter, project.TargetChapters)
+	status, phase := restoredStatus(state.Chapter, state.StoryStatus)
 	return &job{
-		ID: id, Root: root, Length: normalizedLength(project.LengthProfile, project.TargetChapters),
+		ID: id, Root: root, Length: normalizedLength(project.LengthProfile),
 		Status: status, Phase: phase, UpdatedAt: updatedAt,
 	}, nil
 }
@@ -70,8 +69,8 @@ func committedAt(root string, fallback time.Time) time.Time {
 	return fallback
 }
 
-func restoredStatus(chapter, target int) (string, string) {
-	if target > 0 && chapter >= target {
+func restoredStatus(chapter int, storyStatus string) (string, string) {
+	if storyStatus == "completed" {
 		return "complete", "故事已经完整收束"
 	}
 	if chapter == 0 {
@@ -80,16 +79,9 @@ func restoredStatus(chapter, target int) (string, string) {
 	return "ready", "可以继续阅读"
 }
 
-func normalizedLength(profile string, target int) string {
-	if _, _, valid := story.ChapterRangeForLength(profile); valid {
+func normalizedLength(profile string) string {
+	if map[string]bool{"short": true, "medium": true, "long": true, "epic": true}[profile] {
 		return profile
 	}
-	switch {
-	case target <= 8:
-		return "short"
-	case target <= 18:
-		return "medium"
-	default:
-		return "long"
-	}
+	return "medium"
 }

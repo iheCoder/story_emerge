@@ -149,7 +149,7 @@ function createBook(story, index) {
   const title = document.createElement("strong");
   title.textContent = story.title || "正在命名";
   const meta = document.createElement("span");
-  meta.textContent = `${lengthLabel(story.length)} · ${story.current_chapter}/${story.target_chapters || "?"} 章 · ${storyStatus(story)}`;
+  meta.textContent = `${lengthLabel(story.length)} · 已写 ${story.current_chapter} 章 · ${storyStatus(story)}`;
   button.append(title, meta);
   button.addEventListener("click", () => openLibraryStory(story));
   return button;
@@ -230,7 +230,7 @@ function renderChapterOrbit(story) {
   elements.chapterOrbit.replaceChildren();
   const visibleCount = Math.min(
     Math.max(3, story.current_chapter + (story.running ? 1 : 0)),
-    story.target_chapters || 3,
+    Math.max(story.current_chapter, 3),
   );
   for (let number = 1; number <= visibleCount; number += 1) {
     elements.chapterOrbit.appendChild(createOrbitChapter(story, number));
@@ -326,9 +326,9 @@ function renderLatestChapterAction(story, generate, ending, hasNext) {
 }
 
 function renderReaderProgress(story) {
-  document.querySelector("#reader-progress").textContent = `${state.currentChapter} / ${story.target_chapters || story.current_chapter}`;
+  document.querySelector("#reader-progress").textContent = `第 ${state.currentChapter} 章`;
   document.querySelector("#reader-story-status").textContent = story.running ? "故事生长中" : isComplete(story) ? "已经完成" : "阅读中";
-  drawReaderCore(document.querySelector("#reader-core"), state.currentChapter, story.target_chapters || story.current_chapter);
+  drawReaderCore(document.querySelector("#reader-core"), state.currentChapter, Math.max(story.current_chapter, state.currentChapter));
 }
 
 async function generateNextChapter() {
@@ -398,11 +398,11 @@ function chapterAt(story, number) {
 }
 
 function isComplete(story) {
-  return story.target_chapters > 0 && story.current_chapter >= story.target_chapters;
+  return story.story_status === "completed";
 }
 
 function lengthLabel(length) {
-  return { short: "短篇", medium: "中篇", long: "长篇" }[length] || "小说";
+  return { short: "短篇", medium: "中篇", long: "长篇", epic: "超长篇" }[length] || "小说";
 }
 
 function storyStatus(story) {

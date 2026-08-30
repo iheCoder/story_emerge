@@ -15,7 +15,7 @@ import (
 const previewChapterCount = 3
 
 // CreateRequest 是 Web 产品允许读者表达的全部创作输入。
-// 具体章数、人物数量和叙事结构由总导演在篇幅边界内决定。
+// 具体结构由 Architect 根据故事规模意图决定，不预设章数或单章长度。
 type CreateRequest struct {
 	Idea   string `json:"idea"`
 	Length string `json:"length"`
@@ -79,12 +79,11 @@ func (runtime *WorkflowRuntime) Continue(
 	return engine.Run(ctx, limit)
 }
 
-// newProject 把产品层的篇幅档位转成总导演可决策的项目契约。
+// newProject 把产品层的篇幅档位保存为创作规模意图。
 func (runtime *WorkflowRuntime) newProject(root string, request CreateRequest) story.Project {
 	return story.Project{
 		Version: story.FormatVersion, Name: filepath.Base(root), Idea: request.Idea,
 		LengthProfile: request.Length, Provider: runtime.config.Provider, Model: runtime.config.Model,
-		ChapterMinChars: 1600, ChapterMaxChars: 2200,
 		MaxCalls: callBudget(request.Length), CreatedAt: time.Now().UTC(),
 	}
 }
@@ -110,7 +109,9 @@ func callBudget(length string) int {
 	case "medium":
 		return 160
 	case "long":
-		return 260
+		return 400
+	case "epic":
+		return 900
 	default:
 		panic(fmt.Sprintf("unexpected length profile %q", length))
 	}

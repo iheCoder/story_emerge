@@ -126,8 +126,8 @@ func validateCreateRequest(request CreateRequest) error {
 	if len([]rune(request.Idea)) > 10000 {
 		return fmt.Errorf("故事灵感不能超过 10000 个字符")
 	}
-	if _, _, valid := story.ChapterRangeForLength(request.Length); !valid {
-		return fmt.Errorf("篇幅必须是 short、medium 或 long")
+	if !map[string]bool{"short": true, "medium": true, "long": true, "epic": true}[request.Length] {
+		return fmt.Errorf("篇幅必须是 short、medium、long 或 epic")
 	}
 	return nil
 }
@@ -162,6 +162,9 @@ func (server *Server) run(id, operation string, execute func(workflow.Reporter) 
 		return
 	}
 	current.Status = "ready"
+	if operation == "complete" {
+		current.Status = "complete"
+	}
 	current.Phase = completionMessage(operation)
 }
 
@@ -201,15 +204,17 @@ func translateEvent(event workflow.Event) string {
 		return strings.Replace(event.Message, "已提交", "已经准备好了", 1)
 	case stage == "chapter":
 		return event.Message + "正在形成"
-	case strings.HasSuffix(stage, "_plan"):
-		return chapterLabel(stage) + "正在寻找下一步"
+	case strings.HasSuffix(stage, "_replan"):
+		return chapterLabel(stage) + "正在重新寻找方向"
 	case strings.HasSuffix(stage, "_write"):
 		return chapterLabel(stage) + "正在写下发生的一切"
 	case strings.Contains(stage, "_record"):
 		return "记住这一章带来的改变"
-	case strings.Contains(stage, "_review"):
-		return "让人物、伏笔与情绪彼此对齐"
-	case strings.Contains(stage, "_revise") || strings.Contains(stage, "_correct"):
+	case strings.Contains(stage, "_canon"):
+		return "确认这一章没有遗忘已经发生的事"
+	case strings.Contains(stage, "_reader"):
+		return "听听那个等待故事的人此刻在意什么"
+	case strings.Contains(stage, "_revise"):
 		return "调整这一章的呼吸"
 	case stage == "complete":
 		return "这一段故事已经完成"
@@ -303,7 +308,7 @@ type storySnapshot struct {
 	Title          string          `json:"title,omitempty"`
 	Logline        string          `json:"logline,omitempty"`
 	CurrentChapter int             `json:"current_chapter"`
-	TargetChapters int             `json:"target_chapters,omitempty"`
+	StoryStatus    string          `json:"story_status,omitempty"`
 	Running        bool            `json:"running"`
 	Chapters       []chapterMeta   `json:"chapters"`
 	Events         []progressEvent `json:"events"`
@@ -337,7 +342,7 @@ func loadSnapshot(current job) (storySnapshot, error) {
 	}
 	snapshot.Title, snapshot.Logline = bible.Title, bible.Logline
 	snapshot.Idea, snapshot.CreatedAt = project.Idea, project.CreatedAt
-	snapshot.CurrentChapter, snapshot.TargetChapters = state.Chapter, project.TargetChapters
+	snapshot.CurrentChapter, snapshot.StoryStatus = state.Chapter, state.StoryStatus
 	for _, summary := range state.Summaries {
 		snapshot.Chapters = append(snapshot.Chapters, chapterMeta{
 			Number: summary.Number, Title: summary.Title, Summary: summary.Summary,
@@ -423,12 +428,7 @@ func (server *Server) startContinuation(response http.ResponseWriter, id string,
 		writeError(response, http.StatusConflict, fmt.Errorf("请先等三章试读完成"))
 		return
 	}
-	project, err := store.New(current.Root).LoadProject()
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, err)
-		return
-	}
-	if state.Chapter >= project.TargetChapters {
+	if state.StoryStatus == "completed" {
 		writeError(response, http.StatusConflict, fmt.Errorf("故事已经抵达结局"))
 		return
 	}
