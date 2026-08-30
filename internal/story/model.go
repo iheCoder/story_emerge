@@ -12,22 +12,24 @@ const FormatVersion = 1
 // Project 保存一次小说生产任务中不会随章节变化的运行参数。
 // API 密钥刻意不在这里出现，只允许从环境变量读取。
 type Project struct {
-	Version         int       `json:"version"`           // 持久化格式版本。
-	Name            string    `json:"name"`              // 项目和导出书稿使用的名称。
-	Idea            string    `json:"idea"`              // 用户原始创作点子，不在初始化后被模型改写。
-	Provider        string    `json:"provider"`          // openai 或 deepseek。
-	Model           string    `json:"model"`             // 创建项目时确定的模型名。
-	TargetChapters  int       `json:"target_chapters"`   // 全书目标章节数。
-	ChapterMinChars int       `json:"chapter_min_chars"` // 审核使用的最小可见字数。
-	ChapterMaxChars int       `json:"chapter_max_chars"` // 审核使用的最大可见字数。
-	MaxCalls        int       `json:"max_calls"`         // 项目生命周期内的逻辑调用预算。
-	CreatedAt       time.Time `json:"created_at"`        // 便于审计项目何时建立。
+	Version         int       `json:"version"`                  // 持久化格式版本。
+	Name            string    `json:"name"`                     // 项目和导出书稿使用的名称。
+	Idea            string    `json:"idea"`                     // 用户原始创作点子，不在初始化后被模型改写。
+	LengthProfile   string    `json:"length_profile,omitempty"` // 用户选择的短篇/中篇/长篇体验档位。
+	Provider        string    `json:"provider"`                 // openai 或 deepseek。
+	Model           string    `json:"model"`                    // 创建项目时确定的模型名。
+	TargetChapters  int       `json:"target_chapters"`          // 全书目标章节数。
+	ChapterMinChars int       `json:"chapter_min_chars"`        // 审核使用的最小可见字数。
+	ChapterMaxChars int       `json:"chapter_max_chars"`        // 审核使用的最大可见字数。
+	MaxCalls        int       `json:"max_calls"`                // 项目生命周期内的逻辑调用预算。
+	CreatedAt       time.Time `json:"created_at"`               // 便于审计项目何时建立。
 }
 
 // Genesis 是总导演在开写前交付的完整创作起点。
 type Genesis struct {
-	Bible        StoryBible   `json:"bible"`         // 全书静态创作契约。
-	InitialState InitialState `json:"initial_state"` // 第 0 章动态快照素材。
+	TargetChapters int          `json:"target_chapters"` // 总导演根据篇幅档位和故事需要选择的全书章数。
+	Bible          StoryBible   `json:"bible"`           // 全书静态创作契约。
+	InitialState   InitialState `json:"initial_state"`   // 第 0 章动态快照素材。
 }
 
 // StoryBible 是全书的北极星。已经提交的章节可以改变人物处境，

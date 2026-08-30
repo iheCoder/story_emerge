@@ -1,8 +1,9 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["bible", "initial_state"],
+  "required": ["target_chapters", "bible", "initial_state"],
   "properties": {
+    "target_chapters": {"type": "integer", "minimum": 3, "maximum": 30},
     "bible": {
       "type": "object",
       "additionalProperties": false,

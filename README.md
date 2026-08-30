@@ -43,12 +43,24 @@ go run ./cmd/story-emerge new \
 
 默认模型分别是 `deepseek-v4-flash` 和 `gpt-5.6-luna`。DeepSeek V1 会拒绝其他模型名，避免实测时误用 Pro。
 
-## 四个命令
+## Web 创作体验
+
+Web 入口只向读者询问故事灵感和短篇/中篇/长篇。具体章节数由总导演在篇幅范围内根据故事决定。创建后先生成三章试读，每一章通过审核并推进 `HEAD` 后就会立即点亮并开放阅读。
+
+```bash
+export DEEPSEEK_API_KEY="你的密钥"
+go run ./cmd/story-emerge serve --provider auto --addr 127.0.0.1:8787
+```
+
+打开 `http://127.0.0.1:8787`。三章试读结束后可以只生成下一章，也可以让工作流继续完成整个故事。后者仍然逐章提交，已完成章节无需等待全书结束即可阅读。
+
+## 五个命令
 
 - `new`：让总导演建立故事圣经、人物状态和剧情线账本。
 - `run`：从 `HEAD` 继续逐章写作；`--chapters 1` 可只跑一章观察效果。
 - `status`：不调用模型，直接查看当前人物和剧情线。
 - `export`：只读取 `HEAD` 已提交历史，合并生成 `manuscript.md`。
+- `serve`：启动本地 Web 入口，提供三章试读、沉浸阅读和后续生成。
 
 完整参数可以通过 `go run ./cmd/story-emerge <命令> -h` 查看。
 

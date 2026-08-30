@@ -11,6 +11,21 @@ var validThreadStatus = map[string]bool{
 	"active": true, "dormant": true, "resolved": true,
 }
 
+// ChapterRangeForLength 把读者可理解的篇幅档位转换为总导演的决策边界。
+// 这里给出范围而不是固定章节数，具体结构仍由总导演根据故事本身决定。
+func ChapterRangeForLength(profile string) (minimum, maximum int, valid bool) {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "short":
+		return 6, 8, true
+	case "medium":
+		return 12, 18, true
+	case "long":
+		return 24, 30, true
+	default:
+		return 0, 0, false
+	}
+}
+
 // ValidateProject 尽早拒绝无法形成稳定写作任务的输入，避免花费模型调用后才报错。
 func ValidateProject(project Project) error {
 	// 点子、章节范围和调用预算是生成链路的硬前置条件；任何一项无效都不进入模型阶段。
@@ -19,7 +34,11 @@ func ValidateProject(project Project) error {
 	if strings.TrimSpace(project.Idea) == "" {
 		return fmt.Errorf("小说点子不能为空")
 	}
-	if project.TargetChapters < 3 {
+	if project.TargetChapters == 0 {
+		if _, _, valid := ChapterRangeForLength(project.LengthProfile); !valid {
+			return fmt.Errorf("未指定目标章节数时必须提供有效篇幅档位")
+		}
+	} else if project.TargetChapters < 3 {
 		return fmt.Errorf("目标章节数不能少于 3")
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"story_emerge/internal/llm"
 	"story_emerge/internal/store"
 	"story_emerge/internal/story"
+	"story_emerge/internal/webapp"
 	"story_emerge/internal/workflow"
 )
 
@@ -52,12 +54,78 @@ func execute(ctx context.Context, arguments []string) error {
 		return showStatus(arguments[1:])
 	case "export":
 		return exportNovel(arguments[1:])
+	case "serve":
+		return serveWeb(ctx, arguments[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
 	default:
-		return fmt.Errorf("未知命令 %q；可用命令：new、run、status、export", arguments[0])
+		return fmt.Errorf("未知命令 %q；可用命令：new、run、status、export、serve", arguments[0])
 	}
+}
+
+// serveWeb 启动本地 Web 产品入口，并在进程信号到来时等待 HTTP 连接优雅退出。
+func serveWeb(ctx context.Context, arguments []string) error {
+	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
+	address := flags.String("addr", "127.0.0.1:8787", "Web 监听地址")
+	dataRoot := flags.String("data", "novels", "小说项目保存目录")
+	provider := flags.String("provider", "auto", "模型提供商：auto、deepseek 或 openai")
+	model := flags.String("model", "", "覆盖提供商默认模型")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+
+	selectedProvider, err := resolveWebProvider(*provider)
+	if err != nil {
+		return err
+	}
+	runtime, err := webapp.NewWorkflowRuntime(selectedProvider, *model)
+	if err != nil {
+		return err
+	}
+	application, err := webapp.NewServer(ctx, *dataRoot, runtime)
+	if err != nil {
+		return err
+	}
+	return listenWeb(ctx, *address, application.Handler())
+}
+
+// resolveWebProvider 让默认 Web 启动命令使用当前已经配置好的模型密钥。
+func resolveWebProvider(provider string) (string, error) {
+	if provider != "auto" {
+		return provider, nil
+	}
+	if strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")) != "" {
+		return "deepseek", nil
+	}
+	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
+		return "openai", nil
+	}
+	return "", fmt.Errorf("缺少 DEEPSEEK_API_KEY 或 OPENAI_API_KEY")
+}
+
+// listenWeb 承担监听和关闭时序，业务 handler 不感知进程信号。
+func listenWeb(ctx context.Context, address string, handler http.Handler) error {
+	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	errors := make(chan error, 1)
+	go func() { errors <- server.ListenAndServe() }()
+	fmt.Printf("story-emerge Web 已启动：http://%s\n", address)
+
+	select {
+	case err := <-errors:
+		if !errorsIsServerClosed(err) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdown)
+	}
+}
+
+func errorsIsServerClosed(err error) bool {
+	return err == http.ErrServerClosed
 }
 
 // runNew 读取创作点子、解析模型配置并初始化一个全新的小说项目。
@@ -272,6 +340,7 @@ func printUsage() {
   story-emerge run --project novels/demo
   story-emerge status --project novels/demo
   story-emerge export --project novels/demo
+  story-emerge serve --provider auto --addr 127.0.0.1:8787
 
 密钥：
   DeepSeek 使用 DEEPSEEK_API_KEY

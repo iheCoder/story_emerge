@@ -69,6 +69,71 @@ func TestEngineRunsOneCompleteChapterTransaction(t *testing.T) {
 	assertOneChapterCommitted(t, files, root, 5)
 }
 
+func TestInitializeLetsArchitectChooseChapterCountWithinLengthProfile(t *testing.T) {
+	// 场景：Web 项目只声明“中篇”，总导演选择 14 章并同时生成覆盖 14 章的故事弧。
+	// 预期：初始化把选择固化到 project.json，后续恢复不再依赖前端档位猜测。
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "novel")
+	project := testProject()
+	project.TargetChapters = 0
+	project.LengthProfile = "medium"
+	genesis := testGenesis(14)
+	fake := &fakeGenerator{
+		responses: map[string][]string{"architect": {mustJSON(genesis)}},
+		calls:     map[string]int{},
+	}
+
+	files := store.New(root)
+	engine, err := New(fake, files, project.MaxCalls, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Initialize(context.Background(), project); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := files.LoadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.TargetChapters != 14 {
+		t.Fatalf("总导演选择没有固化，实际章节数为 %d", stored.TargetChapters)
+	}
+}
+
+func TestInitializeRepairsOneInvalidGenesis(t *testing.T) {
+	// 场景：总导演第一次返回合法 JSON，但遗漏一名正式人物的初始状态。
+	// 预期：明确领域错误只触发一次 architect_repair，修复成功后提交 HEAD=000 并记录两次用量。
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "novel")
+	project := testProject()
+	invalid := testGenesis(project.TargetChapters)
+	invalid.InitialState.Characters = invalid.InitialState.Characters[:2]
+	valid := testGenesis(project.TargetChapters)
+	fake := &fakeGenerator{
+		responses: map[string][]string{
+			"architect":        {mustJSON(invalid)},
+			"architect_repair": {mustJSON(valid)},
+		},
+		calls: map[string]int{},
+	}
+
+	files := store.New(root)
+	engine, err := New(fake, files, project.MaxCalls, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Initialize(context.Background(), project); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls["architect_repair"] != 1 {
+		t.Fatalf("Genesis 修复次数错误: %d", fake.calls["architect_repair"])
+	}
+	usage, err := files.CountUsage()
+	if err != nil || usage != 2 {
+		t.Fatalf("初始化用量应包含原始和修复调用: count=%d err=%v", usage, err)
+	}
+}
+
 func TestEngineRepairsOneInvalidStateDelta(t *testing.T) {
 	// 场景：书记员第一次引用不存在的事实，随后返回合法修复 delta。
 	// 预期：只触发一次 record_repair，最终章节提交且用量增加 1，验证状态修复有界且可恢复。
@@ -200,6 +265,7 @@ func newHappyFake(project story.Project) *fakeGenerator {
 func testGenesis(target int) story.Genesis {
 	// 构造完整 Bible 和第 0 章状态，包含三名人物、连续两段故事弧和一条主线。
 	return story.Genesis{
+		TargetChapters: target,
 		Bible: story.StoryBible{
 			Title: "听见机器", Genre: "都市", Logline: "工程师翻身", ReaderPromise: "专业逆袭", Ending: "团队胜利",
 			ProtagonistID: "hero", Style: story.StyleGuide{PointOfView: "第三人称", Tone: "克制", ProseRules: []string{"场景推进"}},
