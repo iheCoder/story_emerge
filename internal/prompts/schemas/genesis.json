@@ -1,0 +1,114 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bible", "initial_state"],
+  "properties": {
+    "bible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "genre", "logline", "reader_promise", "ending", "protagonist_id", "style", "arcs", "characters", "canon_rules", "recurring_motifs"],
+      "properties": {
+        "title": {"type": "string"},
+        "genre": {"type": "string"},
+        "logline": {"type": "string"},
+        "reader_promise": {"type": "string"},
+        "ending": {"type": "string"},
+        "protagonist_id": {"type": "string"},
+        "style": {"$ref": "#/$defs/style"},
+        "arcs": {"type": "array", "minItems": 3, "maxItems": 5, "items": {"$ref": "#/$defs/arc"}},
+        "characters": {"type": "array", "minItems": 3, "maxItems": 8, "items": {"$ref": "#/$defs/character"}},
+        "canon_rules": {"type": "array", "items": {"type": "string"}},
+        "recurring_motifs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "initial_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["characters", "facts", "threads", "director_guidance"],
+      "properties": {
+        "characters": {"type": "array", "items": {"$ref": "#/$defs/character_state"}},
+        "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+        "threads": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/thread"}},
+        "director_guidance": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "string"}}
+      }
+    }
+  },
+  "$defs": {
+    "style": {
+      "type": "object", "additionalProperties": false,
+      "required": ["point_of_view", "tone", "prose_rules"],
+      "properties": {
+        "point_of_view": {"type": "string"}, "tone": {"type": "string"},
+        "prose_rules": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "arc": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "start_chapter", "end_chapter", "goal", "climax"],
+      "properties": {
+        "id": {"type": "string"}, "name": {"type": "string"},
+        "start_chapter": {"type": "integer", "minimum": 1},
+        "end_chapter": {"type": "integer", "minimum": 1},
+        "goal": {"type": "string"}, "climax": {"type": "string"}
+      }
+    },
+    "character": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "role", "trait", "desire", "weakness", "secret"],
+      "properties": {
+        "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+        "trait": {"type": "string"}, "desire": {"type": "string"},
+        "weakness": {"type": "string"}, "secret": {"type": "string"}
+      }
+    },
+    "character_state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["character_id", "goal", "emotion", "location", "knowledge", "relationships"],
+      "properties": {
+        "character_id": {"type": "string"}, "goal": {"type": "string"},
+        "emotion": {"type": "string"}, "location": {"type": "string"},
+        "knowledge": {"type": "array", "items": {"$ref": "#/$defs/knowledge"}},
+        "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}}
+      }
+    },
+    "knowledge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fact_id", "belief", "confidence"],
+      "properties": {
+        "fact_id": {"type": "string"},
+        "belief": {"type": "string", "enum": ["knows", "suspects", "believes", "denies"]},
+        "confidence": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    },
+    "relationship": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target_id", "stance", "trust", "tension", "note"],
+      "properties": {
+        "target_id": {"type": "string"}, "stance": {"type": "string"},
+        "trust": {"type": "integer", "minimum": 0, "maximum": 100},
+        "tension": {"type": "integer", "minimum": 0, "maximum": 100},
+        "note": {"type": "string"}
+      }
+    },
+    "fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "visibility", "since_chapter"],
+      "properties": {
+        "id": {"type": "string"}, "description": {"type": "string"},
+        "visibility": {"type": "string", "enum": ["canon", "public"]},
+        "since_chapter": {"type": "integer", "minimum": 0}
+      }
+    },
+    "thread": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "kind", "status", "progress", "opened_chapter", "last_touched_chapter", "planned_payoff_chapter"],
+      "properties": {
+        "id": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"},
+        "status": {"type": "string", "enum": ["active", "dormant", "resolved"]},
+        "progress": {"type": "string"}, "opened_chapter": {"type": "integer", "minimum": 0},
+        "last_touched_chapter": {"type": "integer", "minimum": 0},
+        "planned_payoff_chapter": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}
