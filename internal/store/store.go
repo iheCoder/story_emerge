@@ -63,13 +63,15 @@ func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 
 	// 写入项目配置、Bible 和第 0 章检查点。
 	// 这些 JSON 是后续恢复所需的机器事实，必须先于任何可见提交指针存在。
-	state := story.NewInitialState(genesis.InitialState)
+	state := story.NewInitialState(genesis.InitialState, genesis.Outline)
 	files := []struct {
 		path string
 		data any
 	}{
 		{"project.json", project}, {"story.json", genesis.Bible},
-		{filepath.Join("checkpoints", "000.json"), state},
+		{outlinePath(0), genesis.Outline},
+		{checkpointPath(0), state},
+		{readerCheckpointPath(0), genesis.InitialReaderState},
 	}
 	for _, file := range files {
 		if err := store.writeJSON(file.path, file.data); err != nil {
@@ -77,7 +79,7 @@ func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 		}
 	}
 
-	// 写入原始点子和人读视图，方便用户检查总导演交付。
+	// 写入原始点子和人读视图，方便用户检查 Architect 的一次性交付。
 	if err := store.writeText("brief.md", "# 原始创作点子\n\n"+project.Idea+"\n"); err != nil {
 		return err
 	}
@@ -125,6 +127,36 @@ func (store *Store) LoadState() (story.State, error) {
 	var state story.State
 	err = store.readJSON(checkpointPath(number), &state)
 	return state, err
+}
+
+// LoadReaderState reads the reader checkpoint at the same committed HEAD.
+func (store *Store) LoadReaderState() (story.ReaderState, error) {
+	number, err := store.loadHEAD()
+	if err != nil {
+		return story.ReaderState{}, err
+	}
+	var state story.ReaderState
+	err = store.readJSON(readerCheckpointPath(number), &state)
+	return state, err
+}
+
+// LoadOutline reads the immutable outline version referenced by State.
+func (store *Store) LoadOutline(version int) (story.StoryOutline, error) {
+	var outline story.StoryOutline
+	err := store.readJSON(outlinePath(version), &outline)
+	return outline, err
+}
+
+func (store *Store) loadHEAD() (int, error) {
+	head, err := os.ReadFile(store.path("HEAD"))
+	if err != nil {
+		return 0, fmt.Errorf("读取 HEAD 失败: %w", err)
+	}
+	number, err := strconv.Atoi(strings.TrimSpace(string(head)))
+	if err != nil || number < 0 {
+		return 0, fmt.Errorf("HEAD 内容无效: %q", strings.TrimSpace(string(head)))
+	}
+	return number, nil
 }
 
 // LoadChapter 读取已提交章节；不存在的正章节号表示尚未提交。
@@ -183,7 +215,7 @@ func (store *Store) ExportManuscript() (string, error) {
 // SaveWorking 将中间产物保存到 .work 诊断区，不改变正式提交指针，
 // 便于定位失败原因或人工接管。
 func (store *Store) SaveWorking(number int, name string, data any) error {
-	// .work 是可诊断的临时区：保存计划、草稿、审核意见等中间结果，
+	// .work 是可诊断的临时区：保存草稿、状态与审核意见等中间结果，
 	// 但不改变 HEAD，因此人工查看或下次重跑都不会把草稿当成正式剧情。
 	// 根据章节号和产物名计算诊断文件路径。
 	path := filepath.Join(".work", fmt.Sprintf("%03d-%s", number, name))
@@ -197,28 +229,20 @@ func (store *Store) SaveWorking(number int, name string, data any) error {
 
 // CommitChapter 把本章所有产物写好后才推进 HEAD。
 // 即使进程在最后一步前退出，旧 HEAD 仍指向完整、可读取的上一章。
-func (store *Store) CommitChapter(plan story.ChapterPlan, chapter string, delta story.StateDelta, review story.Review, state story.State) error {
-	// 先验证计划与状态的章节号，再依次写五类审计产物和人类视图，最后原子替换 HEAD。
+func (store *Store) CommitChapter(chapter string, delta story.StateDelta, review story.CanonReview, reader story.ReaderState, state story.State, outline story.StoryOutline, replanned bool) error {
+	// 依次写正文、状态差量、Canon 结果、Reader 状态和人类视图，最后原子替换 HEAD。
 	// 任一步失败都会保留旧 HEAD；代价是可能留下可清理的孤儿文件，但不会破坏可恢复性。
-	// 确认计划和候选状态属于同一个章节。
 	number := state.Chapter
-	if plan.Number != number {
-		return fmt.Errorf("计划章节 %d 与状态章节 %d 不一致", plan.Number, number)
-	}
-
-	// 先写计划、正文、delta、审核和 checkpoint 等审计产物。
-	// 这些文件即使形成孤儿，也不会改变旧 HEAD 的可恢复性。
-	if err := store.writeJSON(planPath(number), plan); err != nil {
+	if err := validateCommit(delta, review, reader, state, outline); err != nil {
 		return err
 	}
-	if err := store.writeText(chapterPath(number), chapter); err != nil {
+	if err := store.writeChapterArtifacts(number, chapter, delta, review, reader); err != nil {
 		return err
 	}
-	if err := store.writeJSON(deltaPath(number), delta); err != nil {
-		return err
-	}
-	if err := store.writeJSON(reviewPath(number), review); err != nil {
-		return err
+	if replanned {
+		if err := store.writeJSON(outlinePath(outline.Version), outline); err != nil {
+			return err
+		}
 	}
 	if err := store.writeJSON(checkpointPath(number), state); err != nil {
 		return err
@@ -235,6 +259,39 @@ func (store *Store) CommitChapter(plan story.ChapterPlan, chapter string, delta 
 
 	// 所有产物成功后才原子推进 HEAD。
 	return store.writeText("HEAD", fmt.Sprintf("%03d\n", number))
+}
+
+func validateCommit(delta story.StateDelta, review story.CanonReview, reader story.ReaderState, state story.State, outline story.StoryOutline) error {
+	number := state.Chapter
+	if delta.Chapter != number || delta.Summary.Number != number {
+		return fmt.Errorf("状态增量与候选检查点章节不一致: %d/%d/%d", delta.Chapter, delta.Summary.Number, number)
+	}
+	if !review.Passed {
+		return fmt.Errorf("正典检查未通过，不能提交第 %d 章", number)
+	}
+	if err := story.ValidateReaderState(reader, number); err != nil {
+		return fmt.Errorf("读者检查点无效: %w", err)
+	}
+	if state.OutlineVersion != outline.Version {
+		return fmt.Errorf("大纲版本与候选检查点不一致: %d/%d", outline.Version, state.OutlineVersion)
+	}
+	return nil
+}
+
+func (store *Store) writeChapterArtifacts(number int, chapter string, delta story.StateDelta, review story.CanonReview, reader story.ReaderState) error {
+	if err := store.writeText(chapterPath(number), chapter); err != nil {
+		return err
+	}
+	if err := store.writeJSON(deltaPath(number), delta); err != nil {
+		return err
+	}
+	if err := store.writeJSON(canonReviewPath(number), review); err != nil {
+		return err
+	}
+	if err := store.writeJSON(readerCheckpointPath(number), reader); err != nil {
+		return err
+	}
+	return nil
 }
 
 // AppendUsage 追加一条成功调用记录到 usage.jsonl。
@@ -319,7 +376,7 @@ func (store *Store) ensureNewRoot() error {
 // createDirectories 建立项目产物的固定目录布局。
 func (store *Store) createDirectories() error {
 	// 目录集合对应状态机的产物类型；集中创建让后续写入无需在每个阶段重复判断目录。
-	for _, directory := range []string{"chapters", "plans", "deltas", "reviews", "checkpoints", ".work"} {
+	for _, directory := range []string{"chapters", "deltas", "canon-reviews", "reader-checkpoints", "outlines", "checkpoints", ".work"} {
 		if err := os.MkdirAll(store.path(directory), 0o755); err != nil {
 			return fmt.Errorf("创建目录 %s 失败: %w", directory, err)
 		}
@@ -413,16 +470,14 @@ func chapterPath(number int) string {
 	return filepath.Join("chapters", fmt.Sprintf("%03d.md", number))
 }
 
-// planPath 返回章节计划 JSON 的固定编号路径。
-func planPath(number int) string {
-	// 计划与章节一一对应，便于审计“模型写了什么计划、最终提交了什么正文”。
-	return filepath.Join("plans", fmt.Sprintf("%03d.json", number))
+func canonReviewPath(number int) string {
+	return filepath.Join("canon-reviews", fmt.Sprintf("%03d.json", number))
 }
-
-// reviewPath 返回章节审核 JSON 的固定编号路径。
-func reviewPath(number int) string {
-	// 审核结果独立保存，支持回看拒稿原因而不污染正文文件。
-	return filepath.Join("reviews", fmt.Sprintf("%03d.json", number))
+func readerCheckpointPath(number int) string {
+	return filepath.Join("reader-checkpoints", fmt.Sprintf("%03d.json", number))
+}
+func outlinePath(version int) string {
+	return filepath.Join("outlines", fmt.Sprintf("%03d.json", version))
 }
 
 // deltaPath 返回章节状态增量 JSON 的固定编号路径。

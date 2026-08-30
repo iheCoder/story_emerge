@@ -12,7 +12,7 @@ type responseRequest struct {
 	Instructions    string           `json:"instructions"`          // 角色指令。
 	Input           string           `json:"input"`                 // 业务输入。
 	MaxOutputTokens int              `json:"max_output_tokens"`     // 输出预算。
-	Store           bool             `json:"store"`                 // V1 禁止供应商持久化请求。
+	Store           bool             `json:"store"`                 // 禁止供应商持久化请求。
 	Reasoning       *reasoningConfig `json:"reasoning,omitempty"`   // 可选推理设置。
 	Temperature     *float64         `json:"temperature,omitempty"` // 可选采样温度。
 	Text            *textConfig      `json:"text,omitempty"`        // 结构化输出设置。
@@ -114,7 +114,7 @@ func extractOutputText(outputs []responseOutput) string {
 // responseStatusError 将响应中的 error/incomplete/status 翻译成可诊断错误。
 func responseStatusError(stage string, payload responsePayload) error {
 	// 将“业务失败、输出不完整、未知状态”翻译成带阶段名的中文错误，
-	// 让 CLI 和 status 日志能直接定位是 architect/write/editor 哪一环出问题。
+	// 让 CLI 和 status 日志能直接定位是 architect/write/canon/reader 哪一环出问题。
 	// 优先报告服务端显式错误。
 	if payload.Error != nil {
 		return fmt.Errorf("阶段 %s 失败 [%s]: %s", stage, payload.Error.Code, payload.Error.Message)

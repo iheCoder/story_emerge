@@ -2,20 +2,20 @@ package story
 
 import "fmt"
 
-// NewInitialState 把总导演产生的初始素材转换成第 0 章的正式快照。
-func NewInitialState(initial InitialState) State {
-	// 第 0 章没有正文和时间线；这里只复制导演交付的初始事实、人物和剧情线，
-	// 为后续每次 ApplyDelta 提供稳定的可比较基线。
-	// 建立第 0 章的固定元数据和空历史集合，同时复制导演交付的初始内容，
-	// 避免后续 append 修改 Genesis 的底层切片。
+// NewInitialState 把 Architect 一次性产生的初始素材转换成第 0 章正式快照。
+func NewInitialState(initial InitialState, outline StoryOutline) State {
+	// 第 0 章没有正文和时间线。复制 Architect 交付的事实、人物和剧情线，
+	// 既为后续 ApplyDelta 提供稳定基线，也避免 append 修改 Genesis 的底层切片。
 	return State{
-		Chapter:          0,
-		Characters:       clone(initial.Characters),
-		Facts:            clone(initial.Facts),
-		Threads:          clone(initial.Threads),
-		Timeline:         []TimelineEvent{},
-		Summaries:        []ChapterSummary{},
-		DirectorGuidance: clone(initial.DirectorGuidance),
+		Chapter:         0,
+		Characters:      clone(initial.Characters),
+		Facts:           clone(initial.Facts),
+		Threads:         clone(initial.Threads),
+		Timeline:        []TimelineEvent{},
+		Summaries:       []ChapterSummary{},
+		OutlineVersion:  outline.Version,
+		OutlineProgress: OutlineProgress{CurrentMovementID: outline.CurrentMovementID, Status: "ongoing"},
+		StoryStatus:     "ongoing",
 	}
 }
 
@@ -43,7 +43,21 @@ func ApplyDelta(current State, delta StateDelta) (State, error) {
 	// 替换既有剧情线并追加新线，形成下一章唯一状态快照。
 	next.Threads = replaceThreads(next.Threads, delta.ThreadStates)
 	next.Threads = append(next.Threads, clone(delta.NewThreads)...)
+	next.OutlineProgress = delta.OutlineProgress
+	next.StoryStatus = delta.StoryStatus
+	if delta.OutlineProgress.Status == "completed" {
+		next.CompletedMovementIDs = appendUnique(next.CompletedMovementIDs, delta.OutlineProgress.CurrentMovementID)
+	}
 	return next, nil
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 // DropUnknownRelationships 清理模型为临时人物创建的长期关系。
@@ -138,6 +152,21 @@ func validateDelta(current State, delta StateDelta) error {
 	if delta.Chapter != expected || delta.Summary.Number != expected {
 		return fmt.Errorf("状态变化章节应为 %d，实际为 %d/%d", expected, delta.Chapter, delta.Summary.Number)
 	}
+	if !validProgressStatus[delta.OutlineProgress.Status] || delta.OutlineProgress.CurrentMovementID == "" {
+		return fmt.Errorf("大纲推进状态无效: %s/%s", delta.OutlineProgress.CurrentMovementID, delta.OutlineProgress.Status)
+	}
+	if delta.OutlineProgress.CurrentMovementID != current.OutlineProgress.CurrentMovementID {
+		return fmt.Errorf("书记员不能切换当前故事阶段")
+	}
+	if !validStoryStatus[delta.StoryStatus] {
+		return fmt.Errorf("全书状态无效: %s", delta.StoryStatus)
+	}
+	if current.StoryStatus == "ending" && delta.StoryStatus == "ongoing" {
+		return fmt.Errorf("全书已进入收束阶段，不能退回 ongoing")
+	}
+	if current.StoryStatus == "completed" && delta.StoryStatus != "completed" {
+		return fmt.Errorf("已完成故事不能重新开启")
+	}
 
 	// 校验新增事实的唯一性。
 	if err := validateFactChanges(current, delta.NewFacts); err != nil {
@@ -173,16 +202,10 @@ func validateFactChanges(current State, additions []Fact) error {
 	return nil
 }
 
-// validateCharacterChanges 校验人物白名单、更新数量和知识/关系引用。
+// validateCharacterChanges 校验人物白名单以及知识、关系引用。
 func validateCharacterChanges(current State, newFacts []Fact, changes []CharacterState) error {
-	// 人物状态更新有数量上限，且只能引用正式人物和已存在/本章新增的事实。
-	// 这两个限制共同控制状态膨胀，并阻止模型凭空创造长期人物。
-	// 限制单章动态人物更新数量，避免模型输出无边界膨胀。
-	if len(changes) > 4 {
-		return fmt.Errorf("单章人物状态更新过多: %d，最多允许 4 个", len(changes))
-	}
-
-	// 建立人物白名单和事实索引（包含本章新增事实）。
+	// 只限制引用是否合法，不限制本章可以影响多少正式人物。人物数量是
+	// 正文内容，不是程序应预设的节奏配额。
 	known := make(map[string]bool, len(current.Characters))
 	facts := make(map[string]bool, len(current.Facts)+len(newFacts))
 	for _, character := range current.Characters {
@@ -325,7 +348,7 @@ func cloneState(state State) State {
 	state.Threads = clone(state.Threads)
 	state.Timeline = clone(state.Timeline)
 	state.Summaries = clone(state.Summaries)
-	state.DirectorGuidance = clone(state.DirectorGuidance)
+	state.CompletedMovementIDs = clone(state.CompletedMovementIDs)
 	return state
 }
 

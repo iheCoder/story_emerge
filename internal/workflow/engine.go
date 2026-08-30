@@ -22,7 +22,7 @@ type Event struct {
 // Reporter 允许入口层订阅进度；Engine 在无 reporter 时仍可无界面运行。
 type Reporter func(Event)
 
-// Engine 串联“上下文 -> 计划 -> 正文 -> 审核 -> 提交”的状态机。
+// Engine 串联“上下文 -> 正文 -> 记账 -> 正典检查 -> Reader -> 提交”的状态机。
 // usedCalls 从 usage.jsonl 恢复，maxCalls 在整个项目生命周期内生效而非仅限当前进程。
 type Engine struct {
 	generator llm.Generator

@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "chapter",
+    "cares_about",
+    "understands_goal",
+    "wants_next",
+    "current_feeling",
+    "received_payoff",
+    "confused_by",
+    "losing_patience_with",
+    "continue_reason",
+    "suggested_action"
+  ],
+  "properties": {
+    "chapter": {"type": "integer"},
+    "cares_about": {"$ref": "#/$defs/strings"},
+    "understands_goal": {"type": "string"},
+    "wants_next": {"$ref": "#/$defs/strings"},
+    "current_feeling": {"type": "string"},
+    "received_payoff": {"$ref": "#/$defs/strings"},
+    "confused_by": {"$ref": "#/$defs/strings"},
+    "losing_patience_with": {"$ref": "#/$defs/strings"},
+    "continue_reason": {"type": "string"},
+    "suggested_action": {"type": "string", "enum": ["continue", "adjust", "replan"]}
+  },
+  "$defs": {
+    "strings": {"type": "array", "items": {"type": "string"}}
+  }
+}

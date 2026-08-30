@@ -141,10 +141,8 @@ func runNew(ctx context.Context, arguments []string) error {
 	name := flags.String("name", "", "项目名称；默认使用输出目录名")
 	provider := flags.String("provider", "deepseek", "模型提供商：deepseek 或 openai")
 	model := flags.String("model", "", "覆盖提供商默认模型")
-	chapters := flags.Int("chapters", 12, "目标章节数")
-	minChars := flags.Int("min-chars", 2200, "每章最少汉字数")
-	maxChars := flags.Int("max-chars", 2800, "每章目标最大汉字数")
-	maxCalls := flags.Int("max-calls", 90, "整个项目允许的逻辑模型调用数")
+	length := flags.String("length", "medium", "故事规模意图：short、medium、long 或 epic")
+	maxCalls := flags.Int("max-calls", 220, "整个项目允许的逻辑模型调用数")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -165,13 +163,13 @@ func runNew(ctx context.Context, arguments []string) error {
 
 	// 组装项目契约和工作流引擎。
 	// Engine 统一负责状态机，CLI 不直接参与章节生成细节。
-	project := newProject(*name, root, idea, config, *chapters, *minChars, *maxChars, *maxCalls)
+	project := newProject(*name, root, idea, config, *length, *maxCalls)
 	engine, err := newEngine(config, store.New(root), project.MaxCalls)
 	if err != nil {
 		return err
 	}
 
-	// 调用总导演建立 Bible 和第 0 章状态。
+	// 调用一次性 Architect 建立 Bible、大纲、Reader 和第 0 章状态。
 	// 只有 Initialize 成功，输出目录才会拥有可继续运行的 HEAD。
 	_, err = engine.Initialize(ctx, project)
 	return err
@@ -185,7 +183,7 @@ func runNovel(ctx context.Context, arguments []string) error {
 	// 解析并校验项目路径。
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	root := flags.String("project", "", "小说项目目录")
-	limit := flags.Int("chapters", 0, "本次最多写几章；0 表示写到项目目标")
+	limit := flags.Int("chapters", 0, "本次最多写几章；0 表示写到故事自然完成")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -213,7 +211,7 @@ func runNovel(ctx context.Context, arguments []string) error {
 		return err
 	}
 
-	// limit 只限制本次运行步数，不会修改项目的目标章节数。
+	// limit 只限制本次运行步数，不会修改故事自己的完成状态。
 	return engine.Run(ctx, *limit)
 }
 
@@ -292,10 +290,10 @@ func readNewInputs(ideaFile, output string) (string, string, error) {
 func newProject(
 	name, root, idea string,
 	config llm.Config,
-	chapters, minChars, maxChars, maxCalls int,
+	length string, maxCalls int,
 ) story.Project {
-	// Project 保存后会成为后续所有阶段的契约：章节目标、字数窗口、模型和调用预算
-	// 都从这里读取，因此默认值只能在项目创建时决定，运行中不再隐式改变。
+	// Project 保存后会成为后续阶段的运行契约：规模意图、模型和调用预算
+	// 都从这里读取；规模意图不会被转换为章节或字数配额。
 	// 未提供项目名时从输出目录推导稳定名称。
 	if strings.TrimSpace(name) == "" {
 		name = filepath.Base(root)
@@ -303,10 +301,9 @@ func newProject(
 
 	// 组装并返回会写入 project.json 的不可变项目契约。
 	return story.Project{
-		Version: story.FormatVersion, Name: name, Idea: idea,
+		Name: name, Idea: idea,
 		Provider: config.Provider, Model: config.Model,
-		TargetChapters: chapters, ChapterMinChars: minChars,
-		ChapterMaxChars: maxChars, MaxCalls: maxCalls, CreatedAt: time.Now().UTC(),
+		LengthProfile: length, MaxCalls: maxCalls, CreatedAt: time.Now().UTC(),
 	}
 }
 

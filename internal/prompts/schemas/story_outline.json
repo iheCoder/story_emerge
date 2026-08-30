@@ -1,0 +1,13 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "core_conflict", "protagonist_drive", "current_movement_id", "movements"],
+  "properties": {
+    "version": {"type": "integer"}, "core_conflict": {"type": "string"}, "protagonist_drive": {"type": "string"},
+    "current_movement_id": {"type": "string"},
+    "movements": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "dramatic_pressure", "intended_change", "expected_reward", "completion_signals"],
+      "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "dramatic_pressure": {"type": "string"}, "intended_change": {"type": "string"}, "expected_reward": {"type": "string"}, "completion_signals": {"type": "array", "items": {"type": "string"}}}
+    }}
+  }
+}

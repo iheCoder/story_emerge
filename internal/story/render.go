@@ -16,11 +16,11 @@ func RenderStory(bible StoryBible) string {
 
 	// 按 Bible 的业务区块输出类型、承诺和结局方向。
 	writeSection(&builder, "类型", bible.Genre)
-	writeSection(&builder, "读者承诺", bible.ReaderPromise)
-	writeSection(&builder, "最终方向", bible.Ending)
+	writeSection(&builder, "目标读者", bible.TargetReader.Name+"："+bible.TargetReader.ReadingHistory)
+	writeSection(&builder, "首要阅读快感", bible.NarrativePromise.PrimaryPleasure)
+	writeSection(&builder, "最终方向", bible.EndingDirection)
 
 	// 输出阶段、人物、正典规则和反复意象。
-	writeArcs(&builder, bible.Arcs)
 	writeCharacters(&builder, bible.Characters)
 	writeList(&builder, "世界与正典规则", bible.CanonRules)
 	writeList(&builder, "反复意象", bible.RecurringMotifs)
@@ -38,14 +38,13 @@ func RenderStatus(bible StoryBible, state State) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "# 《%s》当前状态\n\n", bible.Title)
 	fmt.Fprintf(&builder, "已提交到第 %d 章。\n\n", state.Chapter)
+	fmt.Fprintf(&builder, "故事状态：%s；当前阶段：%s（%s）。\n\n", state.StoryStatus, state.OutlineProgress.CurrentMovementID, state.OutlineProgress.Status)
 
 	// 输出人物动态、剧情线账本和最近章节记忆。
 	writeCharacterStates(&builder, bible, state.Characters)
 	writeThreads(&builder, state.Threads)
 	writeRecentSummaries(&builder, state.Summaries)
 
-	// 输出阶段复盘留下的下一步指导。
-	writeList(&builder, "总导演下一阶段提示", state.DirectorGuidance)
 	return builder.String()
 }
 
@@ -71,17 +70,6 @@ func writeList(builder *strings.Builder, title string, values []string) {
 		fmt.Fprintf(builder, "- %s\n", value)
 	}
 	builder.WriteString("\n")
-}
-
-// writeArcs 输出阶段名称、范围、目标和高潮。
-func writeArcs(builder *strings.Builder, arcs []StoryArc) {
-	// 阶段按输入顺序渲染；ValidateGenesis 已保证其章节范围连续，这里不重复推导。
-	// 输出阶段区块和每个阶段的范围。
-	builder.WriteString("## 故事阶段\n\n")
-	for _, arc := range arcs {
-		fmt.Fprintf(builder, "### %s（第 %d～%d 章）\n\n", arc.Name, arc.StartChapter, arc.EndChapter)
-		fmt.Fprintf(builder, "目标：%s\n\n高潮：%s\n\n", arc.Goal, arc.Climax)
-	}
 }
 
 // writeCharacters 输出静态人物底色信息。
@@ -138,9 +126,9 @@ func writeThreads(builder *strings.Builder, threads []PlotThreadState) {
 	// 输出所有剧情线的生命周期和推进账本。
 	builder.WriteString("## 剧情线账本\n\n")
 	for _, thread := range threads {
-		fmt.Fprintf(builder, "- **%s** [%s/%s]：%s（最近推进：第 %d 章，计划回收：第 %d 章）\n",
+		fmt.Fprintf(builder, "- **%s** [%s/%s]：%s（最近推进：第 %d 章）\n",
 			thread.Name, thread.Kind, thread.Status, thread.Progress,
-			thread.LastTouchedChapter, thread.PlannedPayoffChapter)
+			thread.LastTouchedChapter)
 	}
 	builder.WriteString("\n")
 }

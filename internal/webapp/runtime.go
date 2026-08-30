@@ -82,7 +82,7 @@ func (runtime *WorkflowRuntime) Continue(
 // newProject 把产品层的篇幅档位保存为创作规模意图。
 func (runtime *WorkflowRuntime) newProject(root string, request CreateRequest) story.Project {
 	return story.Project{
-		Version: story.FormatVersion, Name: filepath.Base(root), Idea: request.Idea,
+		Name: filepath.Base(root), Idea: request.Idea,
 		LengthProfile: request.Length, Provider: runtime.config.Provider, Model: runtime.config.Model,
 		MaxCalls: callBudget(request.Length), CreatedAt: time.Now().UTC(),
 	}

@@ -88,18 +88,18 @@ func ConfigFromEnv(provider, model string) (Config, error) {
 	}
 }
 
-// deepSeekConfig 生成 V1 约定的 DeepSeek Flash 配置。
+// deepSeekConfig 生成项目约定的 DeepSeek Flash 配置。
 func deepSeekConfig(model string) (Config, error) {
-	// V1 有意锁定 DeepSeek Flash：成本和延迟更适合长篇试跑，
+	// 项目锁定 DeepSeek Flash：成本和延迟更适合长篇试跑，
 	// 同时避免模型能力差异导致提示词调优结果不可复现。
-	// 未指定模型时使用 V1 默认的 Flash 模型。
+	// 未指定模型时使用默认的 Flash 模型。
 	if model == "" {
 		model = "deepseek-v4-flash"
 	}
 
 	// 显式指定非 Flash 模型时立即拒绝，避免悄悄扩大成本和能力变量。
 	if model != "deepseek-v4-flash" {
-		return Config{}, fmt.Errorf("V1 的 DeepSeek 只允许使用 deepseek-v4-flash")
+		return Config{}, fmt.Errorf("DeepSeek 只允许使用 deepseek-v4-flash")
 	}
 
 	// 读取密钥并组装最终连接配置。
