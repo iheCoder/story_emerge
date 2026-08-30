@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -114,6 +115,41 @@ func TestWebHomeIsTheCreationExperience(t *testing.T) {
 	}
 }
 
+func TestLibraryRestoresCommittedStoryAfterServerRestart(t *testing.T) {
+	// 场景：前三章已经提交，Web 服务随后重启，同时书架目录里还混有无效文件夹。
+	// 预期：新进程只恢复有效小说，保留 Agent 生成的书名，并且仍可读取和续写第四章。
+	root := filepath.Join(t.TempDir(), "novels")
+	first, err := NewServer(context.Background(), root, &fakeRuntime{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := createStoryForTest(t, first.Handler(), exactInspiration, "medium")
+	waitForChapter(t, first.Handler(), id, 3)
+	if err := os.MkdirAll(filepath.Join(root, "unfinished-junk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	secondRuntime := &fakeRuntime{}
+	second, err := NewServer(context.Background(), root, secondRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := second.Handler()
+	library := getLibraryForTest(t, handler)
+	if len(library) != 1 || library[0].ID != id || library[0].Title != "被忘记以前" {
+		t.Fatalf("书架恢复结果错误: %#v", library)
+	}
+	if chapter := getChapterForTest(t, handler, id, 2); chapter.Title != "偷来的雨夜" {
+		t.Fatalf("重启后章节不可读: %#v", chapter)
+	}
+
+	postForTest(t, handler, "/api/stories/"+id+"/next", nil, http.StatusAccepted)
+	continued := waitForChapter(t, handler, id, 4)
+	if continued.CurrentChapter != 4 {
+		t.Fatalf("重启后未能继续生成: %#v", continued)
+	}
+}
+
 func webFixture(request CreateRequest) (story.Project, story.Genesis) {
 	project := story.Project{
 		Version: story.FormatVersion, Name: "demo", Idea: request.Idea, LengthProfile: request.Length,
@@ -190,6 +226,21 @@ func getChapterForTest(t *testing.T, handler http.Handler, id string, number int
 		t.Fatal(err)
 	}
 	return chapter
+}
+
+func getLibraryForTest(t *testing.T, handler http.Handler) []storySnapshot {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, "/api/stories", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET /api/stories 状态错误: %d %s", response.Code, response.Body.String())
+	}
+	var library []storySnapshot
+	if err := json.NewDecoder(response.Body).Decode(&library); err != nil {
+		t.Fatal(err)
+	}
+	return library
 }
 
 func postForTest(t *testing.T, handler http.Handler, path string, value any, expectedStatus int) []byte {

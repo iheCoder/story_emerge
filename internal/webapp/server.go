@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,13 +66,18 @@ func NewServer(ctx context.Context, root string, runtime Runtime) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{ctx: ctx, root: absolute, runtime: runtime, jobs: make(map[string]*job)}, nil
+	server := &Server{ctx: ctx, root: absolute, runtime: runtime, jobs: make(map[string]*job)}
+	if err := server.syncLibrary(); err != nil {
+		return nil, err
+	}
+	return server, nil
 }
 
 // Handler 注册静态资源和全部故事 API。
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/stories", server.handleCreate)
+	mux.HandleFunc("GET /api/stories", server.handleLibrary)
 	mux.HandleFunc("GET /api/stories/{id}", server.handleStory)
 	mux.HandleFunc("GET /api/stories/{id}/chapters/{number}", server.handleChapter)
 	mux.HandleFunc("POST /api/stories/{id}/next", server.handleNext)
@@ -85,7 +91,12 @@ func staticHandler() http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	return http.FileServer(http.FS(assets))
+	files := http.FileServer(http.FS(assets))
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		// 本地创作产品会频繁迭代嵌入资源；禁止陈旧缓存，避免服务重启后仍显示旧交互。
+		response.Header().Set("Cache-Control", "no-store")
+		files.ServeHTTP(response, request)
+	})
 }
 
 // handleCreate 校验两个产品输入并立即返回任务 ID，真实模型调用在后台执行。
@@ -220,7 +231,7 @@ func chapterLabel(stage string) string {
 }
 
 func (server *Server) handleStory(response http.ResponseWriter, request *http.Request) {
-	current, ok := server.copyJob(request.PathValue("id"))
+	current, ok := server.lookupJob(request.PathValue("id"))
 	if !ok {
 		writeError(response, http.StatusNotFound, fmt.Errorf("故事不存在"))
 		return
@@ -231,6 +242,44 @@ func (server *Server) handleStory(response http.ResponseWriter, request *http.Re
 		return
 	}
 	writeJSON(response, http.StatusOK, snapshot)
+}
+
+// handleLibrary 将所有已提交项目投影为数字书架。扫描只承认拥有有效 HEAD 的目录，
+// 因而失败的半初始化任务和临时工作文件不会出现在用户视野中。
+func (server *Server) handleLibrary(response http.ResponseWriter, _ *http.Request) {
+	if err := server.syncLibrary(); err != nil {
+		writeError(response, http.StatusInternalServerError, err)
+		return
+	}
+	items := server.libraryJobs()
+	snapshots := make([]storySnapshot, 0, len(items))
+	for _, current := range items {
+		snapshot, err := loadSnapshot(current)
+		if err == nil {
+			snapshots = append(snapshots, snapshot)
+		}
+	}
+	writeJSON(response, http.StatusOK, snapshots)
+}
+
+func (server *Server) libraryJobs() []job {
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	items := make([]job, 0, len(server.jobs))
+	for _, current := range server.jobs {
+		copy := *current
+		copy.Events = append([]progressEvent(nil), current.Events...)
+		items = append(items, copy)
+	}
+	sort.Slice(items, func(left, right int) bool { return items[left].UpdatedAt.After(items[right].UpdatedAt) })
+	return items
+}
+
+func (server *Server) lookupJob(id string) (job, bool) {
+	if err := server.syncLibrary(); err != nil {
+		return job{}, false
+	}
+	return server.copyJob(id)
 }
 
 func (server *Server) copyJob(id string) (job, bool) {
@@ -258,6 +307,9 @@ type storySnapshot struct {
 	Running        bool            `json:"running"`
 	Chapters       []chapterMeta   `json:"chapters"`
 	Events         []progressEvent `json:"events"`
+	Idea           string          `json:"idea,omitempty"`
+	CreatedAt      time.Time       `json:"created_at,omitempty"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 type chapterMeta struct {
@@ -270,6 +322,7 @@ func loadSnapshot(current job) (storySnapshot, error) {
 	snapshot := storySnapshot{
 		ID: current.ID, Status: current.Status, Phase: current.Phase, Error: current.Error,
 		Length: current.Length, Running: current.Running, Chapters: []chapterMeta{}, Events: current.Events,
+		UpdatedAt: current.UpdatedAt,
 	}
 	if _, err := os.Stat(filepath.Join(current.Root, "HEAD")); errors.Is(err, os.ErrNotExist) {
 		return snapshot, nil
@@ -283,6 +336,7 @@ func loadSnapshot(current job) (storySnapshot, error) {
 		return snapshot, err
 	}
 	snapshot.Title, snapshot.Logline = bible.Title, bible.Logline
+	snapshot.Idea, snapshot.CreatedAt = project.Idea, project.CreatedAt
 	snapshot.CurrentChapter, snapshot.TargetChapters = state.Chapter, project.TargetChapters
 	for _, summary := range state.Summaries {
 		snapshot.Chapters = append(snapshot.Chapters, chapterMeta{
@@ -306,7 +360,7 @@ func loadCommittedStory(files *store.Store) (story.Project, story.StoryBible, st
 }
 
 func (server *Server) handleChapter(response http.ResponseWriter, request *http.Request) {
-	current, ok := server.copyJob(request.PathValue("id"))
+	current, ok := server.lookupJob(request.PathValue("id"))
 	if !ok {
 		writeError(response, http.StatusNotFound, fmt.Errorf("故事不存在"))
 		return
@@ -359,7 +413,7 @@ func (server *Server) handleComplete(response http.ResponseWriter, request *http
 }
 
 func (server *Server) startContinuation(response http.ResponseWriter, id string, limit int, operation string) {
-	current, ok := server.copyJob(id)
+	current, ok := server.lookupJob(id)
 	if !ok {
 		writeError(response, http.StatusNotFound, fmt.Errorf("故事不存在"))
 		return

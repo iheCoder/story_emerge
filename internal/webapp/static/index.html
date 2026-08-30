@@ -3,46 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f8fc">
+  <meta name="theme-color" content="#fbfbfa">
   <link rel="icon" href="data:,">
   <title>故事初生</title>
   <meta name="description" content="从一句灵感开始，让故事逐章生长。">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <canvas class="ambient-canvas" id="ambient-canvas" aria-hidden="true"></canvas>
-  <div class="atmosphere" aria-hidden="true">
-    <span class="fragment fragment-a" id="fragment-a">记忆</span>
-    <span class="fragment fragment-b" id="fragment-b">重逢</span>
-    <span class="fragment fragment-c" id="fragment-c">雨夜</span>
-  </div>
-
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" id="brand-button" type="button" aria-label="回到故事灵感">
+      <button class="brand" id="brand-button" type="button" aria-label="回到创造页">
         <span class="brand-mark" aria-hidden="true"><span></span></span>
         <span>故事初生</span>
       </button>
-      <span class="quiet-status" id="quiet-status">灵感入口</span>
+      <nav class="primary-nav" aria-label="主导航">
+        <button class="nav-link is-active" data-route="create" type="button">创造</button>
+        <button class="nav-link" data-route="library" type="button">书架</button>
+      </nav>
+      <span class="quiet-status" id="quiet-status">等待灵感</span>
     </header>
 
     <main>
       <section class="view create-view is-active" id="create-view" aria-labelledby="create-title">
-        <div class="create-copy">
-          <p class="eyebrow">让一个念头开始呼吸</p>
-          <h1 id="create-title">你想进入一个<br>怎样的故事？</h1>
-          <p class="intro">一个画面、一段情节、一个人物，甚至只是某种感觉都可以。</p>
+        <canvas class="story-core" id="story-core" aria-hidden="true"></canvas>
+        <div class="create-heading">
+          <h1 id="create-title">你想进入一个<br>怎样的<span>故事</span>？</h1>
+          <p>一个画面、一段情节、一个人物，甚至只是某种感觉都可以。</p>
         </div>
 
         <form class="creation-form" id="creation-form">
-          <div class="input-block">
-            <label for="idea">故事灵感</label>
-            <textarea id="idea" name="idea" rows="9" maxlength="10000">为改变暗恋对象死亡的命运，顾以谕以“供名身份&quot;穿越回过去，重写结局。但只要抵达特定的时间节点，他的存在会被抹去，如同从未出现在余然宸的生命中。
+          <div class="idea-field">
+            <div class="field-heading">
+              <label for="idea">故事灵感</label>
+              <span><strong id="idea-count">0</strong> / 10000</span>
+            </div>
+            <textarea id="idea" name="idea" rows="7" maxlength="10000">为改变暗恋对象死亡的命运，顾以谕以“供名身份&quot;穿越回过去，重写结局。但只要抵达特定的时间节点，他的存在会被抹去，如同从未出现在余然宸的生命中。
 顾以谕不在乎被忘记，能救喜欢的人就好。
 结果某次穿越，他被余然宸偷亲了一口。
 罪魁祸首亲完就睡着，呼吸绵长。
 只留顾以谕不敢动，大脑死机，一整宿都想不通问题出在哪里。</textarea>
-            <p class="helper">不用整理成提示词。写下你真正想看的部分。</p>
+            <span class="input-node" aria-hidden="true"></span>
           </div>
 
           <fieldset class="length-fieldset">
@@ -50,90 +50,100 @@
             <div class="length-control">
               <label>
                 <input type="radio" name="length" value="short">
-                <span>短篇<small>聚焦一个核心事件</small></span>
+                <span class="length-node" aria-hidden="true"></span>
+                <span class="length-copy"><strong>短篇</strong><small>聚焦一个核心事件</small></span>
               </label>
               <label>
                 <input type="radio" name="length" value="medium" checked>
-                <span>中篇<small>让关系充分展开</small></span>
+                <span class="length-node" aria-hidden="true"></span>
+                <span class="length-copy"><strong>中篇</strong><small>让关系充分展开</small></span>
               </label>
               <label>
                 <input type="radio" name="length" value="long">
-                <span>长篇<small>容纳更大的命运</small></span>
+                <span class="length-node" aria-hidden="true"></span>
+                <span class="length-copy"><strong>长篇</strong><small>容纳更大的命运</small></span>
               </label>
             </div>
           </fieldset>
 
           <p class="form-error" id="form-error" role="alert"></p>
-          <button class="primary-button" type="submit" id="create-button">
-            <span>开始创造</span>
-            <span class="button-arrow" aria-hidden="true">↗</span>
+          <button class="creation-trigger" type="submit" id="create-button">
+            <span>开始创造</span><span aria-hidden="true">→</span>
           </button>
         </form>
       </section>
 
       <section class="view genesis-view" id="genesis-view" aria-labelledby="story-title">
+        <canvas class="genesis-canvas" id="genesis-canvas" aria-hidden="true"></canvas>
         <div class="genesis-heading">
-          <p class="story-kicker" id="story-kicker">故事正在形成</p>
+          <p id="story-kicker">故事正在形成</p>
           <h2 id="story-title">一个世界正在回应你</h2>
           <p id="story-logline">人物、记忆与命运正在寻找彼此的位置。</p>
         </div>
-
-        <div class="story-track" id="story-track" aria-label="试读章节生成进度">
-          <div class="track-line" aria-hidden="true"><span id="track-progress"></span></div>
-          <button class="chapter-node" data-chapter="1" type="button" disabled>
-            <span class="node-orbit"><span class="node-core"></span></span>
-            <strong>第一章</strong>
-            <small>等待故事开始</small>
-          </button>
-          <button class="chapter-node" data-chapter="2" type="button" disabled>
-            <span class="node-orbit"><span class="node-core"></span></span>
-            <strong>第二章</strong>
-            <small>尚未开始</small>
-          </button>
-          <button class="chapter-node" data-chapter="3" type="button" disabled>
-            <span class="node-orbit"><span class="node-core"></span></span>
-            <strong>第三章</strong>
-            <small>尚未开始</small>
-          </button>
-        </div>
-
-        <div class="later-chapters" id="later-chapters" aria-label="续写章节" hidden></div>
-
-        <div class="genesis-status" aria-live="polite">
-          <span class="status-line" aria-hidden="true"></span>
-          <p id="genesis-status-text">正在理解你的故事</p>
-        </div>
-
-        <div class="preview-decision" id="preview-decision" hidden>
-          <p>故事已经开始了。接下来怎么走？</p>
-          <div class="decision-actions">
-            <button class="primary-button" id="next-chapter-button" type="button">生成下一章</button>
-            <button class="secondary-button" id="complete-story-button" type="button">完成整个故事</button>
+        <div class="chapter-orbit" id="chapter-orbit" aria-label="故事章节轨迹"></div>
+        <div class="genesis-footer">
+          <div class="genesis-status" aria-live="polite">
+            <span class="status-pulse" aria-hidden="true"></span>
+            <p id="genesis-status-text">正在理解你的故事</p>
+          </div>
+          <div class="preview-decision" id="preview-decision" hidden>
+            <p>故事已经开始了。接下来怎么走？</p>
+            <div>
+              <button class="command-button is-primary" id="next-chapter-button" type="button">继续下一章 <span>→</span></button>
+              <button class="command-button" id="complete-story-button" type="button">完成整个故事</button>
+            </div>
           </div>
         </div>
       </section>
 
+      <section class="view library-view" id="library-view" aria-labelledby="library-title">
+        <div class="library-heading">
+          <h1 id="library-title">你的故事<br>仍在这里。</h1>
+          <p>回到上次停下的位置，或者让尚未完成的命运继续生长。</p>
+        </div>
+        <div class="library-rail" id="library-list" aria-live="polite"></div>
+        <div class="library-empty" id="library-empty" hidden>
+          <p>书架还没有故事。</p>
+          <button class="text-command" id="empty-create-button" type="button">写下第一个灵感 →</button>
+        </div>
+      </section>
+
       <section class="view reader-view" id="reader-view" aria-labelledby="reader-title">
-        <nav class="reader-nav" aria-label="章节导航">
-          <button class="text-button" id="back-to-genesis" type="button">返回故事轨迹</button>
-          <span id="reader-position">第一章</span>
-          <button class="text-button" id="reader-next" type="button" disabled>下一章</button>
-        </nav>
+        <div class="reader-shell">
+          <aside class="reader-spine" aria-label="章节脊柱">
+            <button class="back-command" id="back-to-story" type="button">← 故事轨迹</button>
+            <p class="spine-title" id="spine-title">故事章节</p>
+            <div class="spine-list" id="spine-list"></div>
+          </aside>
 
-        <article class="chapter-article">
-          <p class="chapter-number" id="reader-number">CHAPTER I</p>
-          <h2 id="reader-title">章节正在展开</h2>
-          <div class="title-mark" aria-hidden="true"></div>
-          <div class="chapter-body" id="chapter-body"></div>
-        </article>
+          <article class="chapter-article">
+            <header>
+              <p class="chapter-number" id="reader-number">CHAPTER I</p>
+              <h2 id="reader-title">章节正在展开</h2>
+              <span class="title-node" aria-hidden="true"></span>
+            </header>
+            <div class="chapter-body" id="chapter-body"></div>
+            <footer class="reader-pager">
+              <button class="page-command is-previous" id="reader-previous" type="button" hidden>
+                <small>上一章</small><strong id="previous-title"></strong>
+              </button>
+              <button class="page-command is-next" id="reader-next" type="button" hidden>
+                <small>下一章</small><strong id="next-title"></strong>
+              </button>
+              <button class="page-command is-generate" id="reader-generate-next" type="button" hidden>
+                <small>故事仍未结束</small><strong>生成下一章 →</strong>
+              </button>
+              <p class="reader-ending" id="reader-ending" hidden>这个故事已经抵达结局。</p>
+            </footer>
+          </article>
 
-        <footer class="reader-footer">
-          <button class="secondary-button" id="reader-previous" type="button">上一章</button>
-          <div class="reader-continuation" id="reader-continuation">
-            <p id="reader-continuation-text">下一章仍在故事轨迹中形成。</p>
-            <button class="primary-button" id="reader-generate-next" type="button" hidden>生成下一章</button>
-          </div>
-        </footer>
+          <aside class="reader-context" aria-label="阅读进度">
+            <canvas id="reader-core" width="156" height="156" aria-hidden="true"></canvas>
+            <p id="reader-position">第 1 章</p>
+            <strong id="reader-progress">1 / 1</strong>
+            <span id="reader-story-status">阅读中</span>
+          </aside>
+        </div>
       </section>
     </main>
   </div>
