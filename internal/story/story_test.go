@@ -36,15 +36,19 @@ func TestReplanCannotRewriteCompletedMovement(t *testing.T) {
 	}
 }
 
-func TestGenesisRejectsBroadAudienceLabel(t *testing.T) {
+func TestGenesisAudienceValidationDoesNotClassifyNamesByKeyword(t *testing.T) {
+	// 场景：Architect 选择了一个字段完整的目标读者画像。
+	// 预期：程序只验证结构，不用人口或题材关键词枚举猜测画像是否具体。
 	genesis := Genesis{Bible: StoryBible{Title: "书", ProtagonistID: "p", EndingDirection: "结局",
 		Characters: []Character{{ID: "p", Name: "主角"}}, TargetReader: TargetReader{
-			Name: "青少年读者", ReadingHistory: "看网络小说", Craves: []string{"刺激"}, DropsWhen: []string{"慢"}, BingeTriggers: []string{"反转"}},
-		NarrativePromise: NarrativePromise{PrimaryPleasure: "刺激", MustDeliver: []string{"兑现"}, MustNotBecome: []string{"流水账"}}},
-		Outline:      StoryOutline{CoreConflict: "冲突", CurrentMovementID: "m", Movements: []StoryMovement{{ID: "m"}}},
-		InitialState: InitialState{Characters: []CharacterState{{CharacterID: "p"}}}, InitialReaderState: ReaderState{Chapter: 0, SuggestedAction: "continue"}}
-	if err := ValidateGenesis(genesis); err == nil {
-		t.Fatal("宽泛人口标签不应通过目标读者验证")
+			Name: "一位读者", ReadingHistory: "持续阅读人物成长故事", Craves: []string{"人物选择"}, DropsWhen: []string{"行动无后果"}, BingeTriggers: []string{"关系改变"}, FitWithStory: "偏爱此类人物成长"},
+		NarrativePromise: NarrativePromise{PrimaryPleasure: "人物成长", MustDeliver: []string{"选择产生后果"}, MustNotBecome: []string{"事件堆砌"}}},
+		Outline:            StoryOutline{CoreConflict: "冲突", CurrentMovementID: "m", Movements: []StoryMovement{{ID: "m"}}},
+		InitialState:       InitialState{Characters: []CharacterState{{CharacterID: "p"}}},
+		InitialReaderState: ReaderState{Chapter: 0, SuggestedAction: "continue"}}
+
+	if err := ValidateGenesis(genesis); err != nil {
+		t.Fatalf("目标读者名称被关键词规则误判: %v", err)
 	}
 }
 

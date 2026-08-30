@@ -53,17 +53,20 @@ func (store *Store) Root() string {
 func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 	// 初始化按“目录 -> 不可变输入 -> 000 检查点 -> 人类视图 -> HEAD”顺序执行。
 	// HEAD 是项目可见性的提交标记，必须最后写，避免半初始化目录被误判为可继续项目。
-	// 确认目标是安全的新目录，并建立固定子目录。
+	// 阶段一：确认目标目录可以安全初始化，拒绝覆盖任何已有项目。
 	if err := store.ensureNewRoot(); err != nil {
 		return err
 	}
+
+	// 阶段二：一次创建所有固定产物目录，后续写入不再隐式扩展布局。
 	if err := store.createDirectories(); err != nil {
 		return err
 	}
 
-	// 写入项目配置、Bible 和第 0 章检查点。
+	// 阶段三：写入项目配置、Bible 和第 0 章检查点。
 	// 这些 JSON 是后续恢复所需的机器事实，必须先于任何可见提交指针存在。
 	state := story.NewInitialState(genesis.InitialState, genesis.Outline)
+
 	files := []struct {
 		path string
 		data any
@@ -79,7 +82,7 @@ func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 		}
 	}
 
-	// 写入原始点子和人读视图，方便用户检查 Architect 的一次性交付。
+	// 阶段四：写入原始点子和人读视图，方便用户检查 Architect 的一次性交付。
 	if err := store.writeText("brief.md", "# 原始创作点子\n\n"+project.Idea+"\n"); err != nil {
 		return err
 	}
@@ -87,7 +90,7 @@ func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 		return err
 	}
 
-	// 最后写入 HEAD，正式宣布项目初始化完成。
+	// 阶段五：最后写入 HEAD，正式宣布项目初始化完成。
 	return store.writeText("HEAD", "000\n")
 }
 

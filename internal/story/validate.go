@@ -12,31 +12,40 @@ var validStoryStatus = map[string]bool{"ongoing": true, "ending": true, "complet
 var validReaderAction = map[string]bool{"continue": true, "adjust": true, "replan": true}
 var validLengthProfile = map[string]bool{"short": true, "medium": true, "long": true, "epic": true}
 
-// ValidateProject validates operational inputs only. LengthProfile remains a
-// creative scale hint and never expands into numeric chapter or word limits.
+// ValidateProject 只验证启动工作流所需的操作参数。
+// LengthProfile 是创作规模意图，不能在这里转换成章节数或字数配额。
 func ValidateProject(project Project) error {
+	// 创作点子是 Architect 唯一的用户事实来源，空输入无法建立故事。
 	if strings.TrimSpace(project.Idea) == "" {
 		return fmt.Errorf("小说点子不能为空")
 	}
+
+	// 规模档位只控制全书量级语义；枚举用于拒绝拼写错误，不携带文学规则。
 	profile := strings.ToLower(strings.TrimSpace(project.LengthProfile))
 	if !validLengthProfile[profile] {
 		return fmt.Errorf("篇幅意图必须是 short、medium、long 或 epic")
 	}
+
+	// 调用预算是成本护栏，必须在任何模型请求前确定。
 	if project.MaxCalls < 1 {
 		return fmt.Errorf("模型调用上限必须大于 0")
 	}
+
 	return nil
 }
 
-// ValidateGenesis establishes stable identities and outline references without
-// judging how many movements a story ought to contain.
+// ValidateGenesis 建立后续章节依赖的稳定主键和引用关系。
+// 它不判断题材、情节好坏、movement 数量或目标读者选择是否聪明。
 func ValidateGenesis(genesis Genesis) error {
+	// 阶段一：验证 Bible 的最小创作契约。
 	if strings.TrimSpace(genesis.Bible.Title) == "" {
 		return fmt.Errorf("故事标题不能为空")
 	}
 	if err := validateAudience(genesis.Bible); err != nil {
 		return err
 	}
+
+	// 阶段二：建立正式人物白名单，并确认主角引用有效。
 	characters, err := collectCharacterIDs(genesis.Bible.Characters)
 	if err != nil {
 		return err
@@ -44,12 +53,16 @@ func ValidateGenesis(genesis Genesis) error {
 	if !characters[genesis.Bible.ProtagonistID] {
 		return fmt.Errorf("主角 %q 不在人物表中", genesis.Bible.ProtagonistID)
 	}
+
+	// 阶段三：验证初始大纲是可寻址的第 0 版。
 	if err := ValidateOutline(genesis.Outline); err != nil {
 		return err
 	}
 	if genesis.Outline.Version != 0 {
 		return fmt.Errorf("初始化大纲版本必须为 0")
 	}
+
+	// 阶段四：按人物、跨表引用、剧情线生命周期的依赖顺序验证初态。
 	if err := validateInitialCharacters(genesis.InitialState.Characters, characters); err != nil {
 		return err
 	}
@@ -59,28 +72,34 @@ func ValidateGenesis(genesis Genesis) error {
 	if err := validateInitialThreads(genesis.InitialState.Threads); err != nil {
 		return err
 	}
+
+	// 阶段五：Reader 初态也属于 Architect 的第 0 章交付，必须对应同一章节。
 	return ValidateReaderState(genesis.InitialReaderState, 0)
 }
 
+// validateAudience 只检查画像是否具备可供 Writer 使用的字段。
+// “这个人是否真的具体、是否选对”属于 Architect 的语义判断，程序不再用题材词表猜测。
 func validateAudience(bible StoryBible) error {
 	reader := bible.TargetReader
+
+	// 姓名和阅读经历共同标识一个可想象的人；程序不检查名字里出现什么词。
 	if strings.TrimSpace(reader.Name) == "" || strings.TrimSpace(reader.ReadingHistory) == "" {
 		return fmt.Errorf("目标读者必须是有名字和具体阅读经历的人")
 	}
-	for _, broad := range []string{"目标读者", "大众", "青少年", "青年人", "年轻人", "女性读者", "男性读者", "悬疑爱好者"} {
-		if strings.Contains(reader.Name, broad) {
-			return fmt.Errorf("目标读者 %q 仍是宽泛人群，必须具体到一个人", reader.Name)
-		}
-	}
+
+	// 三类偏好是 Writer 进行取舍所需的最小信息，而不是评分配额。
 	if len(reader.Craves) == 0 || len(reader.DropsWhen) == 0 || len(reader.BingeTriggers) == 0 {
 		return fmt.Errorf("目标读者必须说明渴望、弃读点和追读触发点")
 	}
+
+	// Narrative Promise 是创作与阅读观察共享的体验契约。
 	if strings.TrimSpace(bible.NarrativePromise.PrimaryPleasure) == "" {
 		return fmt.Errorf("叙事承诺必须声明首要阅读快感")
 	}
 	if len(bible.NarrativePromise.MustDeliver) == 0 || len(bible.NarrativePromise.MustNotBecome) == 0 {
 		return fmt.Errorf("叙事承诺必须说明必须兑现与不能变成什么")
 	}
+
 	return nil
 }
 

@@ -27,29 +27,38 @@ type initializationUsage struct {
 	result llm.Result
 }
 
-// Initialize asks the architect once, validates its durable contracts, then
-// atomically creates checkpoint zero. There is no recurring director role.
+// Initialize 只调用一次 Architect，验证稳定契约后原子创建第 0 章。
+// 后续章节直接复用这次建立的 Bible、大纲、正典初态和 Reader 初态。
 func (engine *Engine) Initialize(ctx context.Context, project story.Project) (story.Genesis, error) {
+	// 阶段一：在模型调用前验证项目输入，避免为无效任务消耗预算。
 	if err := story.ValidateProject(project); err != nil {
 		return story.Genesis{}, err
 	}
+
+	// 阶段二：让 Architect 建立一次性的 Bible、大纲、正典初态和 Reader 初态。
 	genesis, usages, err := engine.generateGenesis(ctx, project)
 	if err != nil {
 		return story.Genesis{}, err
 	}
+
+	// 阶段三：Store 完整写入第 0 章后才创建 HEAD。
 	if err := engine.store.Create(project, genesis); err != nil {
 		return story.Genesis{}, err
 	}
+
+	// 阶段四：初始化成功后补记调用用量，避免半初始化项目伪装成可运行状态。
 	for _, usage := range usages {
 		if err := engine.store.AppendUsage(usage.stage, usage.result); err != nil {
 			return story.Genesis{}, err
 		}
 	}
+
 	engine.emit("architect", "目标读者、叙事承诺、大纲与第 0 章状态已建立")
 	return genesis, nil
 }
 
 func (engine *Engine) generateGenesis(ctx context.Context, project story.Project) (story.Genesis, []initializationUsage, error) {
+	// 阶段一：把用户输入编码成 Architect 唯一可见的创作合同。
 	contract := newArchitectInput(project)
 	input, err := asPrettyJSON(contract)
 	if err != nil {
@@ -59,6 +68,8 @@ func (engine *Engine) generateGenesis(ctx context.Context, project story.Project
 	if err != nil {
 		return story.Genesis{}, nil, err
 	}
+
+	// 阶段二：执行首次生成，并同时保留成功调用的用量记录。
 	result, err := engine.generate(ctx, architectRequest("architect", instructions, input, schema), false)
 	if err != nil {
 		return story.Genesis{}, nil, err
@@ -68,6 +79,8 @@ func (engine *Engine) generateGenesis(ctx context.Context, project story.Project
 	if validationErr == nil {
 		return genesis, usages, nil
 	}
+
+	// 阶段三：结构或引用无效时只修复一次，不重新设计整个故事。
 	repaired, err := engine.repairGenesis(ctx, contract, result.Text, validationErr, schema)
 	if err != nil {
 		return story.Genesis{}, nil, err
@@ -93,9 +106,7 @@ func (engine *Engine) repairGenesis(ctx context.Context, contract architectInput
 	return engine.generate(ctx, architectRequest("architect_repair", instructions, input, schema), false)
 }
 
-// validateArchitectOutput checks durable structure and references only. It does
-// not infer genre semantics from keywords in the user's prose; that judgment
-// belongs to the one-time Architect and can later be evaluated by Reader.
+// validateArchitectOutput 只检查稳定结构和引用，不从用户文本关键词推断题材语义。
 func validateArchitectOutput(output string) (story.Genesis, error) {
 	genesis, err := decodeStructured[story.Genesis](output)
 	if err != nil {
