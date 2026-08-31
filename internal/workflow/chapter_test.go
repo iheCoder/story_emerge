@@ -66,15 +66,18 @@ func TestTwoInterventionsEndWithFinalizeAndOnlyFinalState(t *testing.T) {
 
 	revise := story.EditorDecision{
 		Action: story.EditorRevise, Reason: "当前行动被说明覆盖", Guidance: "保留启程选择，让阻力通过行动发生",
-		StoryUpdate: story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "rejected-one", Description: "不应提交"}}, StoryStatus: "ongoing"},
+		StoryUpdate:  story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "rejected-one", Description: "不应提交"}}, StoryStatus: "ongoing"},
+		LiveTensions: []string{"REJECTED_DRAFT_TENSION_ONE"},
 	}
 	replan := story.EditorDecision{
 		Action: story.EditorReplan, Reason: "当前未来方向已经无法容纳正文变化", Guidance: "把未来方向调整为人物主动穿越风雪",
-		StoryUpdate: story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "rejected-two", Description: "不应提交"}}, StoryStatus: "ongoing"},
+		StoryUpdate:  story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "rejected-two", Description: "不应提交"}}, StoryStatus: "ongoing"},
+		LiveTensions: []string{"REJECTED_DRAFT_TENSION_TWO"},
 	}
 	finalized := story.EditorFinalizeResult{
-		StoryUpdate: story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "final", Description: "阿禾已进入风雪"}}, StoryStatus: "ongoing"},
-		Summary:     story.ChapterSummary{Number: 1, Title: "风雪", Summary: "阿禾主动走入风雪"},
+		StoryUpdate:  story.StoryUpdate{Chapter: 1, SituationStateChanges: []story.SituationStateChange{{Operation: "upsert", ID: "final", Description: "阿禾已进入风雪"}}, StoryStatus: "ongoing"},
+		Summary:      story.ChapterSummary{Number: 1, Title: "风雪", Summary: "阿禾主动走入风雪"},
+		LiveTensions: []string{"阿禾选择独自上路，但尚未证明自己能承受离乡后的代价"},
 	}
 	fake := &scriptedGenerator{inputs: map[string]string{}, errors: map[string]error{}, responses: map[string]string{
 		"architect":                          mustJSON(genesis),
@@ -98,6 +101,11 @@ func TestTwoInterventionsEndWithFinalizeAndOnlyFinalState(t *testing.T) {
 	}
 	if state.OutlineVersion != 1 {
 		t.Fatalf("replan 未与最终章节同事务提交: %#v", state)
+	}
+	for _, rejected := range []string{"REJECTED_DRAFT_TENSION_ONE", "REJECTED_DRAFT_TENSION_TWO"} {
+		if strings.Contains(strings.Join(state.LiveTensions, " "), rejected) {
+			t.Fatalf("被否决草稿的 Live Tension 污染了最终状态: %#v", state.LiveTensions)
+		}
 	}
 }
 
@@ -144,6 +152,40 @@ func TestFailedFinalizeDoesNotCommitCandidateReplan(t *testing.T) {
 	}
 }
 
+func TestInvalidLiveTensionsDoNotAdvanceHEAD(t *testing.T) {
+	// 场景：Editor 接受正文，但返回超过持久化容量的 Live Tension。
+	// 预期：章节事务在应用状态前失败，正文、Reader 和 HEAD 都不能伪装成已提交。
+	decision := acceptedDecision(1, "启程", "阿禾走出家门")
+	decision.LiveTensions = []string{"一", "二", "三", "四", "五", "六"}
+	fake := &scriptedGenerator{inputs: map[string]string{}, errors: map[string]error{}, responses: map[string]string{
+		"architect":                   mustJSON(testGenesis()),
+		"chapter_001_write":           "# 第1章 启程\n\n阿禾走出家门。",
+		"chapter_001_editor_review_1": mustJSON(decision),
+	}}
+
+	root := filepath.Join(t.TempDir(), "novel")
+	files := store.New(root)
+	project := testProject()
+	engine, err := New(fake, files, project.MaxCalls, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Initialize(context.Background(), project); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Run(context.Background(), 1); err == nil {
+		t.Fatal("超限 Live Tension 却允许章节提交")
+	}
+
+	state, err := files.LoadState()
+	if err != nil || state.Chapter != 0 {
+		t.Fatalf("无效 Live Tension 推进了 HEAD: state=%#v err=%v", state, err)
+	}
+	if _, called := fake.inputs["chapter_001_reader"]; called {
+		t.Fatal("Editor 输出无效后仍然调用了 Reader")
+	}
+}
+
 func newChapterFlowGenerator() *scriptedGenerator {
 	firstObservation := story.ReaderObservation{
 		Chapter: 1, Orientation: "阿禾要把信送到山外", Momentum: "ONLY_AUTHOR_SHOULD_SEE_THIS",
@@ -165,10 +207,16 @@ func newChapterFlowGenerator() *scriptedGenerator {
 }
 
 func acceptedDecision(chapter int, title, summary string) story.EditorDecision {
+	tensions := []string{"阿禾的离乡选择正在改变他与熟悉生活的关系"}
+	if chapter == 1 {
+		tensions = append(tensions, "LIVE_TENSION_AUTHOR_ONLY")
+	}
+
 	return story.EditorDecision{
 		Action: story.EditorAccept, Reason: "当前章节没有严重到值得干预的问题",
-		StoryUpdate: story.StoryUpdate{Chapter: chapter, StoryStatus: "ongoing"},
-		Summary:     story.ChapterSummary{Number: chapter, Title: title, Summary: summary},
+		StoryUpdate:  story.StoryUpdate{Chapter: chapter, StoryStatus: "ongoing"},
+		Summary:      story.ChapterSummary{Number: chapter, Title: title, Summary: summary},
+		LiveTensions: tensions,
 	}
 }
 
@@ -221,6 +269,9 @@ func assertAuthorContexts(t *testing.T, fake *scriptedGenerator) {
 	if !strings.Contains(fake.inputs["chapter_002_write"], "ONLY_AUTHOR_SHOULD_SEE_THIS") {
 		t.Fatal("Writer 没有收到上一章 Reader Observation")
 	}
+	if !strings.Contains(fake.inputs["chapter_002_write"], "LIVE_TENSION_AUTHOR_ONLY") {
+		t.Fatal("Writer 没有收到 Editor 提炼的 Live Tension")
+	}
 	if !strings.Contains(fake.inputs["chapter_002_editor_review_1"], "ONLY_AUTHOR_SHOULD_SEE_THIS") {
 		t.Fatal("Editor 没有收到上一章 Reader Observation")
 	}
@@ -232,7 +283,7 @@ func assertReaderContext(t *testing.T, fake *scriptedGenerator) {
 	input := fake.inputs["chapter_002_reader"]
 	for _, forbidden := range []string{
 		"story_bible", "story_spine", "narrative_promise", "active_outline",
-		"current_story_state", "editor", "ONLY_AUTHOR_SHOULD_SEE_THIS",
+		"current_story_state", "editor", "ONLY_AUTHOR_SHOULD_SEE_THIS", "LIVE_TENSION_AUTHOR_ONLY",
 	} {
 		if strings.Contains(strings.ToLower(input), forbidden) {
 			t.Fatalf("Reader 泄露作者侧字段 %q", forbidden)

@@ -304,6 +304,9 @@ func validateCommit(update story.StoryUpdate, summary story.ChapterSummary, revi
 	if err := story.ValidateReaderObservation(observation, number); err != nil {
 		return fmt.Errorf("读者观察无效: %w", err)
 	}
+	if err := story.ValidateLiveTensions(state.LiveTensions); err != nil {
+		return fmt.Errorf("Live Tension 无效: %w", err)
+	}
 	if state.OutlineVersion != outline.Version {
 		return fmt.Errorf("大纲版本与候选检查点不一致: %d/%d", outline.Version, state.OutlineVersion)
 	}

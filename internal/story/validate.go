@@ -8,6 +8,8 @@ import (
 var validStoryStatus = map[string]bool{"ongoing": true, "ending": true, "completed": true}
 var validTrackStatus = map[string]bool{"ongoing": true, "completed": true}
 
+const maximumLiveTensions = 5
+
 func ValidateProject(project Project) error {
 	if strings.TrimSpace(project.Idea) == "" {
 		return fmt.Errorf("创作点子不能为空")
@@ -160,7 +162,7 @@ func ValidateEditorDecision(decision EditorDecision, chapter int) error {
 
 	switch decision.Action {
 	case EditorAccept:
-		return validateFinalizedEditorial(decision.StoryUpdate, decision.Summary, chapter)
+		return validateFinalizedEditorial(decision.StoryUpdate, decision.Summary, decision.LiveTensions, chapter)
 	case EditorRevise:
 		if strings.TrimSpace(decision.Guidance) == "" {
 			return fmt.Errorf("revise 缺少 Guidance")
@@ -175,15 +177,34 @@ func ValidateEditorDecision(decision EditorDecision, chapter int) error {
 }
 
 func ValidateEditorFinalize(result EditorFinalizeResult, chapter int) error {
-	return validateFinalizedEditorial(result.StoryUpdate, result.Summary, chapter)
+	return validateFinalizedEditorial(result.StoryUpdate, result.Summary, result.LiveTensions, chapter)
 }
 
-func validateFinalizedEditorial(update StoryUpdate, summary ChapterSummary, chapter int) error {
+func validateFinalizedEditorial(update StoryUpdate, summary ChapterSummary, tensions []string, chapter int) error {
 	if update.Chapter != chapter || summary.Number != chapter {
 		return fmt.Errorf("Editor 最终产物章节不一致: %d/%d/%d", update.Chapter, summary.Number, chapter)
 	}
 	if summary.Title == "" || summary.Summary == "" {
 		return fmt.Errorf("读者可见摘要缺少标题或内容")
+	}
+
+	return ValidateLiveTensions(tensions)
+}
+
+// ValidateLiveTensions 只保护状态成本与字符串合法性，不判断应该关注哪种叙事力量。
+// 空列表是合法的；程序不会为了填满容量而制造张力，也不会按章节数自动淘汰旧项。
+func ValidateLiveTensions(tensions []string) error {
+	if len(tensions) > maximumLiveTensions {
+		return fmt.Errorf("Live Tension 数量超过上限 %d: %d", maximumLiveTensions, len(tensions))
+	}
+
+	seen := make(map[string]bool, len(tensions))
+	for _, tension := range tensions {
+		normalized := strings.TrimSpace(tension)
+		if normalized == "" || seen[normalized] {
+			return fmt.Errorf("Live Tension 为空或重复: %q", tension)
+		}
+		seen[normalized] = true
 	}
 
 	return nil

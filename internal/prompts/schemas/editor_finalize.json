@@ -1,10 +1,11 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["story_update", "reader_visible_summary"],
+  "required": ["story_update", "reader_visible_summary", "live_tensions"],
   "properties": {
     "story_update": {"$ref": "#/$defs/update"},
-    "reader_visible_summary": {"$ref": "#/$defs/summary"}
+    "reader_visible_summary": {"$ref": "#/$defs/summary"},
+    "live_tensions": {"type": "array", "items": {"type": "string"}}
   },
   "$defs": {
     "character_change": {

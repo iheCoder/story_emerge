@@ -64,3 +64,48 @@ func TestSchemasDoNotReintroduceRemovedDuplicateState(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveTensionPromptsPreserveCreativeFreedom(t *testing.T) {
+	// 场景：Live Tension 已进入 Writer 与 Editor，但不能退化成章节任务或封闭故事名单。
+	// 预期：Writer 可以完全不触碰张力并继续引入新内容；Editor 明确把容量当上限，
+	// Reader Prompt 则完全不知道这份作者侧状态。
+	writer, err := Template("writer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"本章一项都不碰", "不能成为封闭名单", "不是事实、任务、大纲"} {
+		if !strings.Contains(writer, required) {
+			t.Fatalf("Writer Prompt 缺少 Live Tension 自由边界 %q", required)
+		}
+	}
+
+	editor, err := Template("editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"空列表合法", "容量只是安全上限而不是填写目标", "不得因为本章没有提及就自动删除"} {
+		if !strings.Contains(editor, required) {
+			t.Fatalf("Editor Prompt 缺少 Live Tension 维护边界 %q", required)
+		}
+	}
+
+	reader, err := Template("reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(reader), "live tension") {
+		t.Fatal("Reader Prompt 泄露了作者侧 Live Tension")
+	}
+
+	// 历史实验里 Flash 会把 Schema 的 maxItems 当成填写目标。容量继续由 Go 守住，
+	// 但不把具体数字暴露为模型的隐形配额。
+	for _, name := range []string{"editor_decision", "editor_finalize"} {
+		schema, err := Schema(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(schema), "maxItems") {
+			t.Fatalf("Schema %s 重新暴露了 Live Tension 填写配额", name)
+		}
+	}
+}

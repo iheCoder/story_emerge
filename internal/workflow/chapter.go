@@ -9,15 +9,16 @@ import (
 
 // chapterWork 汇集一个尚未提交的章节事务。
 type chapterWork struct {
-	context     writerContext
-	outline     story.StoryOutline
-	replanned   bool
-	chapter     string
-	update      story.StoryUpdate
-	summary     story.ChapterSummary
-	reviewLog   story.EditorReviewLog
-	next        story.State
-	observation story.ReaderObservation
+	context      writerContext
+	outline      story.StoryOutline
+	replanned    bool
+	chapter      string
+	update       story.StoryUpdate
+	summary      story.ChapterSummary
+	liveTensions []string
+	reviewLog    story.EditorReviewLog
+	next         story.State
+	observation  story.ReaderObservation
 }
 
 // Run 最多推进 limit 章；limit=0 时由故事自身的完成状态决定终点。
@@ -74,8 +75,8 @@ func (engine *Engine) runChapter(ctx context.Context, project story.Project, bib
 		return story.State{}, nil, err
 	}
 
-	// 最终正文确定后，只应用该版本产生的长期 Story Update。
-	work.next, err = story.ApplyStoryUpdate(current, work.outline, work.update)
+	// 最终正文确定后，只应用该版本产生的长期 Story Update 与作者侧注意力快照。
+	work.next, err = story.ApplyStoryUpdate(current, work.outline, work.update, work.liveTensions)
 	if err != nil {
 		return story.State{}, nil, fmt.Errorf("Editor Story Update 无效: %w", err)
 	}

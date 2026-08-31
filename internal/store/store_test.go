@@ -15,7 +15,7 @@ func TestCommitPersistsEditorialArtifactsBeforeHEAD(t *testing.T) {
 	files, outline, genesis := createTestProject(t, root)
 
 	update := story.StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
-	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update)
+	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update, []string{"旅行者是否真正愿意离开熟悉生活"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +35,10 @@ func TestCommitPersistsEditorialArtifactsBeforeHEAD(t *testing.T) {
 	if err != nil || len(summaries) != 1 || summaries[0].Title != "启程" {
 		t.Fatalf("独立摘要未提交: summaries=%#v err=%v", summaries, err)
 	}
+	state, err := files.LoadState()
+	if err != nil || len(state.LiveTensions) != 1 || state.LiveTensions[0] != "旅行者是否真正愿意离开熟悉生活" {
+		t.Fatalf("Live Tension 未随检查点提交: state=%#v err=%v", state, err)
+	}
 	head, _ := os.ReadFile(filepath.Join(root, "HEAD"))
 	if string(head) != "001\n" {
 		t.Fatalf("HEAD=%q", head)
@@ -47,7 +51,7 @@ func TestCommitFailureDoesNotMoveHEAD(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "book")
 	files, outline, genesis := createTestProject(t, root)
 	update := story.StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
-	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update)
+	next, err := story.ApplyStoryUpdate(story.NewInitialState(genesis.InitialState, outline), outline, update, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,9 @@
 package story
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	situationUpsert = "upsert"
@@ -13,6 +16,7 @@ func NewInitialState(initial InitialState, outline StoryOutline) State {
 		Chapter:         0,
 		CharacterStates: clone(initial.CharacterStates),
 		SituationStates: clone(initial.SituationStates),
+		LiveTensions:    []string{},
 		OutlineVersion:  outline.Version,
 		StoryStatus:     "ongoing",
 	}
@@ -20,8 +24,11 @@ func NewInitialState(initial InitialState, outline StoryOutline) State {
 
 // ApplyStoryUpdate 先完成全部确定性校验，再在副本上应用最终正文的长期变化。
 // 被 Editor 否决的草稿不会调用本方法，因此不能污染正式状态。
-func ApplyStoryUpdate(current State, outline StoryOutline, update StoryUpdate) (State, error) {
+func ApplyStoryUpdate(current State, outline StoryOutline, update StoryUpdate, liveTensions []string) (State, error) {
 	if err := ValidateStoryUpdate(current, update); err != nil {
+		return State{}, err
+	}
+	if err := ValidateLiveTensions(liveTensions); err != nil {
 		return State{}, err
 	}
 
@@ -29,6 +36,7 @@ func ApplyStoryUpdate(current State, outline StoryOutline, update StoryUpdate) (
 	next.Chapter = update.Chapter
 	next.CharacterStates = applyCharacterChanges(next.CharacterStates, update.CharacterChanges)
 	next.SituationStates = applySituationChanges(next.SituationStates, update.SituationStateChanges)
+	next.LiveTensions = normalizeLiveTensions(liveTensions)
 	next.OutlineVersion = outline.Version
 	next.StoryStatus = update.StoryStatus
 
@@ -155,7 +163,17 @@ func removeSituationState(current []SituationState, id string) []SituationState 
 func cloneState(state State) State {
 	state.CharacterStates = clone(state.CharacterStates)
 	state.SituationStates = clone(state.SituationStates)
+	state.LiveTensions = clone(state.LiveTensions)
 	return state
+}
+
+func normalizeLiveTensions(tensions []string) []string {
+	normalized := make([]string, 0, len(tensions))
+	for _, tension := range tensions {
+		normalized = append(normalized, strings.TrimSpace(tension))
+	}
+
+	return normalized
 }
 
 func clone[T any](source []T) []T {

@@ -93,10 +93,12 @@ type InitialState struct {
 }
 
 // State 是 HEAD 指向的精简快照，不承担小说历史数据库职责。
+// LiveTensions 是作者侧的有损注意力状态，不具备 Character/Situation 的事实权威。
 type State struct {
 	Chapter         int              `json:"chapter"`
 	CharacterStates []CharacterState `json:"character_states"`
 	SituationStates []SituationState `json:"situation_states"`
+	LiveTensions    []string         `json:"live_tensions"`
 	OutlineVersion  int              `json:"outline_version"`
 	StoryStatus     string           `json:"story_status"`
 }
@@ -153,11 +155,12 @@ const (
 
 // EditorDecision 只判断当前结果是否严重到值得干预，不承担逐段导演职责。
 type EditorDecision struct {
-	Action      EditorAction   `json:"action"`
-	Reason      string         `json:"reason"`
-	Guidance    string         `json:"guidance"`
-	StoryUpdate StoryUpdate    `json:"story_update"`
-	Summary     ChapterSummary `json:"reader_visible_summary"`
+	Action       EditorAction   `json:"action"`
+	Reason       string         `json:"reason"`
+	Guidance     string         `json:"guidance"`
+	StoryUpdate  StoryUpdate    `json:"story_update"`
+	Summary      ChapterSummary `json:"reader_visible_summary"`
+	LiveTensions []string       `json:"live_tensions"`
 }
 
 // EditorDecisionRecord 是正式历史需要保留的最小编辑轨迹。
@@ -170,8 +173,9 @@ type EditorDecisionRecord struct {
 
 // EditorFinalizeResult 在干预预算耗尽后只提炼状态，不再评价或阻止正文。
 type EditorFinalizeResult struct {
-	StoryUpdate StoryUpdate    `json:"story_update"`
-	Summary     ChapterSummary `json:"reader_visible_summary"`
+	StoryUpdate  StoryUpdate    `json:"story_update"`
+	Summary      ChapterSummary `json:"reader_visible_summary"`
+	LiveTensions []string       `json:"live_tensions"`
 }
 
 // EditorReviewLog 保存本章有限干预的可审计轨迹，不参与下一章创作上下文。

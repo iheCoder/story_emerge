@@ -22,7 +22,7 @@ func TestApplyStoryUpdateAllowsEmptyLongTermChanges(t *testing.T) {
 		StoryStatus:           "ongoing",
 	}
 
-	next, err := ApplyStoryUpdate(current, outline, update)
+	next, err := ApplyStoryUpdate(current, outline, update, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,8 +55,46 @@ func TestStoryUpdateRejectsUnknownReferences(t *testing.T) {
 		StoryStatus: "ongoing",
 	}
 
-	if _, err := ApplyStoryUpdate(current, outline, update); err == nil {
+	if _, err := ApplyStoryUpdate(current, outline, update, nil); err == nil {
 		t.Fatal("未知引用却通过 Story Update 校验")
+	}
+}
+
+func TestLiveTensionsAreAReplaceableAttentionSnapshot(t *testing.T) {
+	// 场景：一章没有触碰旧张力，但 Editor 判断它仍有生命力，并新增一项真正改变故事重心的力量。
+	// 预期：程序整体保存 Editor 的选择，不按“本章未出现”自动老化，也不要求填满容量。
+	outline := testOutline()
+	current := NewInitialState(testInitialState(), outline)
+	current.LiveTensions = []string{"旅行者是否愿意真正离开熟悉生活"}
+	update := StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
+	tensions := []string{
+		" 旅行者是否愿意真正离开熟悉生活 ",
+		"同行者的保护正在与旅行者的自主选择发生拉扯",
+	}
+
+	next, err := ApplyStoryUpdate(current, outline, update, tensions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.LiveTensions) != 2 || next.LiveTensions[0] != "旅行者是否愿意真正离开熟悉生活" {
+		t.Fatalf("Live Tension 快照没有按 Editor 输出整体保存: %#v", next.LiveTensions)
+	}
+	if len(current.LiveTensions) != 1 {
+		t.Fatalf("应用下一章状态污染了当前 HEAD: %#v", current.LiveTensions)
+	}
+}
+
+func TestLiveTensionValidationOnlyEnforcesDeterministicBounds(t *testing.T) {
+	// 场景：空列表、重复项与超过容量的列表分别进入状态边界。
+	// 预期：空列表合法；重复和超限被拒绝；程序不判断内容属于关系、悬疑或其他题材。
+	if err := ValidateLiveTensions(nil); err != nil {
+		t.Fatalf("空 Live Tension 被错误拒绝: %v", err)
+	}
+	if err := ValidateLiveTensions([]string{"人物的选择仍有代价", " 人物的选择仍有代价 "}); err == nil {
+		t.Fatal("规范化后重复的 Live Tension 被允许")
+	}
+	if err := ValidateLiveTensions([]string{"一", "二", "三", "四", "五", "六"}); err == nil {
+		t.Fatal("超过状态容量的 Live Tension 被允许")
 	}
 }
 

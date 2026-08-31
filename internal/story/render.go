@@ -32,6 +32,7 @@ func RenderStatus(bible StoryBible, state State) string {
 
 	writeCharacterStates(&builder, bible, state.CharacterStates)
 	writeSituationStates(&builder, state.SituationStates)
+	writeList(&builder, "当前叙事张力", state.LiveTensions)
 
 	return builder.String()
 }

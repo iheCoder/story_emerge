@@ -45,6 +45,7 @@ func (engine *Engine) editChapter(ctx context.Context, bible story.StoryBible, c
 
 		if decision.Action == story.EditorAccept {
 			work.update, work.summary = decision.StoryUpdate, decision.Summary
+			work.liveTensions = append([]string(nil), decision.LiveTensions...)
 			return work, nil
 		}
 
@@ -131,6 +132,7 @@ func (engine *Engine) finalizeAutoAccepted(ctx context.Context, bible story.Stor
 	}
 
 	work.update, work.summary = result.StoryUpdate, result.Summary
+	work.liveTensions = append([]string(nil), result.LiveTensions...)
 	work.reviewLog.AutoAccepted = true
 	return work, nil
 }
