@@ -430,8 +430,11 @@ func (store *Store) readJSON(relative string, target any) error {
 	}
 	defer file.Close()
 
-	// 解码到调用方提供的领域对象。
-	if err := json.NewDecoder(file).Decode(target); err != nil {
+	// 当前项目不迁移旧契约。拒绝未知字段可以让旧 Durable/Track 状态明确失败，
+	// 避免它们被标准库静默忽略后，以缺失上下文的状态继续生成新章节。
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("解析 %s 失败: %w", relative, err)
 	}
 	return nil
@@ -508,6 +511,7 @@ func chapterPath(number int) string {
 func readerObservationPath(number int) string {
 	return filepath.Join("reader-observations", fmt.Sprintf("%03d.json", number))
 }
+
 func outlinePath(version int) string {
 	return filepath.Join("outlines", fmt.Sprintf("%03d.json", version))
 }

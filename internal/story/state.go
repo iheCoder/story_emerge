@@ -3,8 +3,8 @@ package story
 import "fmt"
 
 const (
-	durableUpsert = "upsert"
-	durableRemove = "remove"
+	situationUpsert = "upsert"
+	situationRemove = "remove"
 )
 
 // NewInitialState 把 Architect 的初始当前态复制为第 0 章快照。
@@ -12,8 +12,7 @@ func NewInitialState(initial InitialState, outline StoryOutline) State {
 	return State{
 		Chapter:         0,
 		CharacterStates: clone(initial.CharacterStates),
-		DurableStates:   clone(initial.DurableStates),
-		TrackProgress:   clone(initial.TrackProgress),
+		SituationStates: clone(initial.SituationStates),
 		OutlineVersion:  outline.Version,
 		StoryStatus:     "ongoing",
 	}
@@ -22,15 +21,14 @@ func NewInitialState(initial InitialState, outline StoryOutline) State {
 // ApplyStoryUpdate 先完成全部确定性校验，再在副本上应用最终正文的长期变化。
 // 被 Editor 否决的草稿不会调用本方法，因此不能污染正式状态。
 func ApplyStoryUpdate(current State, outline StoryOutline, update StoryUpdate) (State, error) {
-	if err := ValidateStoryUpdate(current, outline, update); err != nil {
+	if err := ValidateStoryUpdate(current, update); err != nil {
 		return State{}, err
 	}
 
 	next := cloneState(current)
 	next.Chapter = update.Chapter
 	next.CharacterStates = applyCharacterChanges(next.CharacterStates, update.CharacterChanges)
-	next.DurableStates = applyDurableChanges(next.DurableStates, update.DurableStateChanges)
-	next.TrackProgress = applyTrackChanges(next.TrackProgress, update.TrackChanges)
+	next.SituationStates = applySituationChanges(next.SituationStates, update.SituationStateChanges)
 	next.OutlineVersion = outline.Version
 	next.StoryStatus = update.StoryStatus
 
@@ -38,7 +36,7 @@ func ApplyStoryUpdate(current State, outline StoryOutline, update StoryUpdate) (
 }
 
 // ValidateStoryUpdate 只保护章节、引用、ID 和状态枚举，不评价文学内容。
-func ValidateStoryUpdate(current State, outline StoryOutline, update StoryUpdate) error {
+func ValidateStoryUpdate(current State, update StoryUpdate) error {
 	if update.Chapter != current.Chapter+1 {
 		return fmt.Errorf("Story Update 章节应为 %d，实际为 %d", current.Chapter+1, update.Chapter)
 	}
@@ -52,11 +50,11 @@ func ValidateStoryUpdate(current State, outline StoryOutline, update StoryUpdate
 	if err := validateCharacterChanges(current, update.CharacterChanges); err != nil {
 		return err
 	}
-	if err := validateDurableChanges(current, update.DurableStateChanges); err != nil {
+	if err := validateSituationChanges(current, update.SituationStateChanges); err != nil {
 		return err
 	}
 
-	return validateTrackChanges(outline, update.TrackChanges)
+	return nil
 }
 
 func validateCharacterChanges(current State, changes []CharacterStateChange) error {
@@ -79,9 +77,9 @@ func validateCharacterChanges(current State, changes []CharacterStateChange) err
 	return nil
 }
 
-func validateDurableChanges(current State, changes []DurableStateChange) error {
-	known := make(map[string]bool, len(current.DurableStates))
-	for _, state := range current.DurableStates {
+func validateSituationChanges(current State, changes []SituationStateChange) error {
+	known := make(map[string]bool, len(current.SituationStates))
+	for _, state := range current.SituationStates {
 		known[state.ID] = true
 	}
 
@@ -90,36 +88,16 @@ func validateDurableChanges(current State, changes []DurableStateChange) error {
 		if change.ID == "" || seen[change.ID] {
 			return fmt.Errorf("长期状态 ID 为空或重复: %s", change.ID)
 		}
-		if change.Operation == durableRemove && !known[change.ID] {
-			return fmt.Errorf("不能删除不存在的长期状态: %s", change.ID)
+		if change.Operation == situationRemove && !known[change.ID] {
+			return fmt.Errorf("不能删除不存在的局势状态: %s", change.ID)
 		}
-		if change.Operation == durableUpsert && change.Description == "" {
-			return fmt.Errorf("长期状态 %s 的描述为空", change.ID)
+		if change.Operation == situationUpsert && change.Description == "" {
+			return fmt.Errorf("局势状态 %s 的描述为空", change.ID)
 		}
-		if change.Operation != durableUpsert && change.Operation != durableRemove {
-			return fmt.Errorf("长期状态 %s 的操作无效: %s", change.ID, change.Operation)
+		if change.Operation != situationUpsert && change.Operation != situationRemove {
+			return fmt.Errorf("局势状态 %s 的操作无效: %s", change.ID, change.Operation)
 		}
 		seen[change.ID] = true
-	}
-
-	return nil
-}
-
-func validateTrackChanges(outline StoryOutline, changes []TrackProgressChange) error {
-	known := make(map[string]bool, len(outline.Tracks))
-	for _, track := range outline.Tracks {
-		known[track.ID] = true
-	}
-
-	seen := make(map[string]bool, len(changes))
-	for _, change := range changes {
-		if !known[change.TrackID] || seen[change.TrackID] {
-			return fmt.Errorf("Track Progress 引用未知或重复 Track: %s", change.TrackID)
-		}
-		if change.Progress == "" {
-			return fmt.Errorf("Track %s 的进度为空", change.TrackID)
-		}
-		seen[change.TrackID] = true
 	}
 
 	return nil
@@ -140,20 +118,20 @@ func applyCharacterChanges(current []CharacterState, changes []CharacterStateCha
 	return current
 }
 
-func applyDurableChanges(current []DurableState, changes []DurableStateChange) []DurableState {
+func applySituationChanges(current []SituationState, changes []SituationStateChange) []SituationState {
 	for _, change := range changes {
-		if change.Operation == durableRemove {
-			current = removeDurableState(current, change.ID)
+		if change.Operation == situationRemove {
+			current = removeSituationState(current, change.ID)
 			continue
 		}
 
-		current = upsertDurableState(current, change)
+		current = upsertSituationState(current, change)
 	}
 
 	return current
 }
 
-func upsertDurableState(current []DurableState, change DurableStateChange) []DurableState {
+func upsertSituationState(current []SituationState, change SituationStateChange) []SituationState {
 	for index := range current {
 		if current[index].ID == change.ID {
 			current[index].Description = change.Description
@@ -161,10 +139,10 @@ func upsertDurableState(current []DurableState, change DurableStateChange) []Dur
 		}
 	}
 
-	return append(current, DurableState{ID: change.ID, Description: change.Description})
+	return append(current, SituationState{ID: change.ID, Description: change.Description})
 }
 
-func removeDurableState(current []DurableState, id string) []DurableState {
+func removeSituationState(current []SituationState, id string) []SituationState {
 	for index := range current {
 		if current[index].ID == id {
 			return append(current[:index], current[index+1:]...)
@@ -174,28 +152,9 @@ func removeDurableState(current []DurableState, id string) []DurableState {
 	return current
 }
 
-func applyTrackChanges(current []TrackProgress, changes []TrackProgressChange) []TrackProgress {
-	for _, change := range changes {
-		updated := false
-		for index := range current {
-			if current[index].TrackID == change.TrackID {
-				current[index].Progress = change.Progress
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			current = append(current, TrackProgress{TrackID: change.TrackID, Progress: change.Progress})
-		}
-	}
-
-	return current
-}
-
 func cloneState(state State) State {
 	state.CharacterStates = clone(state.CharacterStates)
-	state.DurableStates = clone(state.DurableStates)
-	state.TrackProgress = clone(state.TrackProgress)
+	state.SituationStates = clone(state.SituationStates)
 	return state
 }
 

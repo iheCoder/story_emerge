@@ -11,8 +11,9 @@ func RenderStory(bible StoryBible) string {
 	fmt.Fprintf(&builder, "# %s\n\n", bible.Title)
 	writeSection(&builder, "故事前提", bible.Premise)
 	writeSection(&builder, "Story Spine", bible.StorySpine)
-	writeSection(&builder, "目标读者", bible.TargetReader.Name+"："+bible.TargetReader.ReadingHistory)
-	writeSection(&builder, "首要阅读快感", bible.NarrativePromise.PrimaryPleasure)
+	writeSection(&builder, "目标读者", bible.TargetReader.Portrait)
+	writeSection(&builder, "阅读动机", bible.TargetReader.ReadsFor)
+	writeSection(&builder, "核心阅读体验", bible.NarrativePromise.CoreExperience)
 	writeSection(&builder, "最终方向", bible.EndingDirection)
 
 	writeCharacters(&builder, bible.Characters)
@@ -30,8 +31,7 @@ func RenderStatus(bible StoryBible, state State) string {
 	fmt.Fprintf(&builder, "已提交到第 %d 章；故事状态：%s。\n\n", state.Chapter, state.StoryStatus)
 
 	writeCharacterStates(&builder, bible, state.CharacterStates)
-	writeDurableStates(&builder, state.DurableStates)
-	writeTrackProgress(&builder, state.TrackProgress)
+	writeSituationStates(&builder, state.SituationStates)
 
 	return builder.String()
 }
@@ -100,18 +100,10 @@ func writeCharacterStates(builder *strings.Builder, bible StoryBible, states []C
 	builder.WriteString("\n")
 }
 
-func writeDurableStates(builder *strings.Builder, states []DurableState) {
-	builder.WriteString("## 重要全局状态\n\n")
+func writeSituationStates(builder *strings.Builder, states []SituationState) {
+	builder.WriteString("## 当前客观局势\n\n")
 	for _, state := range states {
 		fmt.Fprintf(builder, "- **%s**：%s\n", state.ID, state.Description)
-	}
-	builder.WriteString("\n")
-}
-
-func writeTrackProgress(builder *strings.Builder, progress []TrackProgress) {
-	builder.WriteString("## Story Track 实际进度\n\n")
-	for _, item := range progress {
-		fmt.Fprintf(builder, "- **%s**：%s\n", item.TrackID, item.Progress)
 	}
 	builder.WriteString("\n")
 }

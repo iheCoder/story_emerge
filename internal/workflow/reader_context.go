@@ -18,18 +18,30 @@ type scoredSummary struct {
 	score   int
 }
 
-// readerVisibleHistory 把阅读历史分成连续的最近窗口和按需召回的早期窗口。
-// 两个窗口都只来自正文摘要，不读取正典账本或历史 Reader Observation。
-func readerVisibleHistory(chapter string, summaries []story.ChapterSummary) ([]story.ChapterSummary, []story.ChapterSummary) {
-	recentStart := len(summaries) - recentSummaryLimit
+// visibleHistory 把正文可见历史分成连续窗口和按需召回窗口。
+// excludedNumber 对应已经以全文提供的章节；先排除其摘要，避免重复强调同一章。
+func visibleHistory(query string, summaries []story.ChapterSummary, excludedNumber int) ([]story.ChapterSummary, []story.ChapterSummary) {
+	eligible := summariesExcept(summaries, excludedNumber)
+	recentStart := len(eligible) - recentSummaryLimit
 	if recentStart < 0 {
 		recentStart = 0
 	}
 
-	recent := append([]story.ChapterSummary(nil), summaries[recentStart:]...)
-	early := retrieveEarlySummaries(chapter, summaries[:recentStart], earlyReaderRetrievalLimit)
+	recent := append([]story.ChapterSummary(nil), eligible[recentStart:]...)
+	early := retrieveEarlySummaries(query, eligible[:recentStart], earlyReaderRetrievalLimit)
 
 	return recent, early
+}
+
+func summariesExcept(summaries []story.ChapterSummary, excludedNumber int) []story.ChapterSummary {
+	result := make([]story.ChapterSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.Number != excludedNumber {
+			result = append(result, summary)
+		}
+	}
+
+	return result
 }
 
 // retrieveEarlySummaries 仅召回与当前正文存在可见文本联系的早期摘要。

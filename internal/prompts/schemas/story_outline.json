@@ -1,28 +1,26 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "current_arc", "tracks", "future_directions"],
+  "required": ["version", "current_arc", "tracks"],
   "properties": {
     "version": {"type": "integer"},
     "current_arc": {
       "type": "object", "additionalProperties": false,
-      "required": ["name", "purpose", "completion_signals"],
+      "required": ["name", "purpose"],
       "properties": {
-        "name": {"type": "string"}, "purpose": {"type": "string"},
-        "completion_signals": {"type": "array", "items": {"type": "string"}}
+        "name": {"type": "string"}, "purpose": {"type": "string"}
       }
     },
     "tracks": {
       "type": "array",
       "items": {
         "type": "object", "additionalProperties": false,
-        "required": ["id", "name", "role", "direction", "status"],
+        "required": ["id", "name", "direction", "status"],
         "properties": {
-          "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+          "id": {"type": "string"}, "name": {"type": "string"},
           "direction": {"type": "string"}, "status": {"type": "string", "enum": ["ongoing", "completed"]}
         }
       }
-    },
-    "future_directions": {"type": "array", "items": {"type": "string"}}
+    }
   }
 }

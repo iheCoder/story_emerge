@@ -12,6 +12,7 @@ type writerContext struct {
 	State                   story.State              `json:"current_story_state"`
 	PreviousChapter         string                   `json:"previous_chapter"`
 	RecentSummaries         []story.ChapterSummary   `json:"recent_summaries"`
+	EarlyRelevantSummaries  []story.ChapterSummary   `json:"relevant_early_summaries"`
 	LatestReaderObservation *story.ReaderObservation `json:"latest_reader_observation,omitempty"`
 	NextChapter             int                      `json:"next_chapter"`
 	LengthProfile           string                   `json:"story_scale_intent"`
@@ -24,15 +25,17 @@ func (engine *Engine) buildWriterContext(project story.Project, bible story.Stor
 		return writerContext{}, err
 	}
 
-	// 独立摘要只提供短期历史，不重新进入长期 Story State。
+	// 摘要只补充上一章全文之外的可见历史。完整上一章的摘要必须排除，避免同一信息
+	// 在上下文中获得两次权重；更早内容仅在与上一章有文本联系时按需召回。
 	summaries, err := engine.store.LoadSummaries()
 	if err != nil {
 		return writerContext{}, err
 	}
+	recent, early := visibleHistory(previous, summaries, state.Chapter)
 
 	return writerContext{
 		Bible: bible, Outline: outline, State: state,
-		PreviousChapter: previous, RecentSummaries: recentSummaries(summaries, recentSummaryLimit),
+		PreviousChapter: previous, RecentSummaries: recent, EarlyRelevantSummaries: early,
 		LatestReaderObservation: reader, NextChapter: state.Chapter + 1,
 		LengthProfile: project.LengthProfile,
 	}, nil

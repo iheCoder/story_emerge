@@ -12,7 +12,7 @@
       "required": ["character_id", "state"],
       "properties": {"character_id": {"type": "string"}, "state": {"type": "string"}}
     },
-    "durable_change": {
+    "situation_change": {
       "type": "object", "additionalProperties": false,
       "required": ["operation", "id", "description"],
       "properties": {
@@ -20,19 +20,13 @@
         "id": {"type": "string"}, "description": {"type": "string"}
       }
     },
-    "track_change": {
-      "type": "object", "additionalProperties": false,
-      "required": ["track_id", "progress"],
-      "properties": {"track_id": {"type": "string"}, "progress": {"type": "string"}}
-    },
     "update": {
       "type": "object", "additionalProperties": false,
-      "required": ["chapter", "character_changes", "durable_state_changes", "track_progress_changes", "story_status"],
+      "required": ["chapter", "character_changes", "situation_state_changes", "story_status"],
       "properties": {
         "chapter": {"type": "integer"},
         "character_changes": {"type": "array", "items": {"$ref": "#/$defs/character_change"}},
-        "durable_state_changes": {"type": "array", "items": {"$ref": "#/$defs/durable_change"}},
-        "track_progress_changes": {"type": "array", "items": {"$ref": "#/$defs/track_change"}},
+        "situation_state_changes": {"type": "array", "items": {"$ref": "#/$defs/situation_change"}},
         "story_status": {"type": "string", "enum": ["ongoing", "ending", "completed"]}
       }
     },

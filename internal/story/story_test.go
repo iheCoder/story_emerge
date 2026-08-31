@@ -18,15 +18,15 @@ func TestApplyStoryUpdateAllowsEmptyLongTermChanges(t *testing.T) {
 	current := NewInitialState(testInitialState(), outline)
 	update := StoryUpdate{
 		Chapter: 1, CharacterChanges: []CharacterStateChange{},
-		DurableStateChanges: []DurableStateChange{}, TrackChanges: []TrackProgressChange{},
-		StoryStatus: "ongoing",
+		SituationStateChanges: []SituationStateChange{},
+		StoryStatus:           "ongoing",
 	}
 
 	next, err := ApplyStoryUpdate(current, outline, update)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Chapter != 1 || len(next.DurableStates) != len(current.DurableStates) {
+	if next.Chapter != 1 || len(next.SituationStates) != len(current.SituationStates) {
 		t.Fatalf("空 Story Update 改坏状态: %#v", next)
 	}
 }
@@ -37,22 +37,22 @@ func TestRejectedDraftCannotMutateCurrentState(t *testing.T) {
 	// 预期：调用方持有的 HEAD 快照保持原值，为新草稿提供干净基线。
 	outline := testOutline()
 	current := NewInitialState(testInitialState(), outline)
-	rejected := StoryUpdate{Chapter: 1, DurableStateChanges: []DurableStateChange{{Operation: "upsert", ID: "rejected", Description: "不应出现"}}, StoryStatus: "ongoing"}
+	rejected := StoryUpdate{Chapter: 1, SituationStateChanges: []SituationStateChange{{Operation: "upsert", ID: "rejected", Description: "不应出现"}}, StoryStatus: "ongoing"}
 	_ = rejected
 
-	if len(current.DurableStates) != 1 || current.DurableStates[0].ID != "weather" {
-		t.Fatalf("未应用的草稿变化污染了当前状态: %#v", current.DurableStates)
+	if len(current.SituationStates) != 1 || current.SituationStates[0].ID != "weather" {
+		t.Fatalf("未应用的草稿变化污染了当前状态: %#v", current.SituationStates)
 	}
 }
 
 func TestStoryUpdateRejectsUnknownReferences(t *testing.T) {
-	// 场景：Editor 输出不存在的人物与 Track ID。
-	// 预期：确定性校验拒绝跨对象引用，HEAD 事务可以在写盘前停止。
+	// 场景：Editor 输出不存在的人物 ID。
+	// 预期：确定性校验拒绝人物引用，HEAD 事务可以在写盘前停止。
 	outline := testOutline()
 	current := NewInitialState(testInitialState(), outline)
 	update := StoryUpdate{
 		Chapter: 1, CharacterChanges: []CharacterStateChange{{CharacterID: "unknown", State: "变化"}},
-		TrackChanges: []TrackProgressChange{{TrackID: "missing", Progress: "变化"}}, StoryStatus: "ongoing",
+		StoryStatus: "ongoing",
 	}
 
 	if _, err := ApplyStoryUpdate(current, outline, update); err == nil {
@@ -68,8 +68,7 @@ func TestReplanUsesGenericTracksWithoutFixedGenreType(t *testing.T) {
 	next.Version = 1
 	next.Tracks = append([]StoryTrack(nil), old.Tracks...)
 	next.Tracks = append(next.Tracks, StoryTrack{
-		ID: "bridge", Name: "旧桥", Role: "改变村庄与外界的联系",
-		Direction: "从争议走向共同修复", Status: "ongoing",
+		ID: "bridge", Name: "旧桥", Direction: "从争议走向共同修复", Status: "ongoing",
 	})
 
 	if err := ValidateReplan(old, next); err != nil {
@@ -80,14 +79,13 @@ func TestReplanUsesGenericTracksWithoutFixedGenreType(t *testing.T) {
 func testOutline() StoryOutline {
 	return StoryOutline{
 		Version: 0, CurrentArc: StoryArc{Name: "风雪前", Purpose: "让送信人真正离开家"},
-		Tracks: []StoryTrack{{ID: "journey", Name: "送信", Role: "推动选择", Direction: "走出村庄", Status: "ongoing"}},
+		Tracks: []StoryTrack{{ID: "journey", Name: "送信", Direction: "走出村庄", Status: "ongoing"}},
 	}
 }
 
 func testInitialState() InitialState {
 	return InitialState{
 		CharacterStates: []CharacterState{{CharacterID: "traveler", State: "尚未离家"}},
-		DurableStates:   []DurableState{{ID: "weather", Description: "风雪将至"}},
-		TrackProgress:   []TrackProgress{{TrackID: "journey", Progress: "仍在准备"}},
+		SituationStates: []SituationState{{ID: "weather", Description: "风雪将至"}},
 	}
 }

@@ -3,26 +3,18 @@
   "additionalProperties": false,
   "required": [
     "chapter",
-    "cares_about",
-    "understands_goal",
-    "memorable_moments",
-    "wants_next",
-    "current_feeling",
-    "received_payoff",
-    "confused_by",
-    "losing_patience_with",
-    "turn_page_reason"
+    "attention",
+    "orientation",
+    "what_landed",
+    "friction",
+    "momentum"
   ],
   "properties": {
     "chapter": {"type": "integer"},
-    "cares_about": {"type": "array", "items": {"type": "string"}},
-    "understands_goal": {"type": "string"},
-    "memorable_moments": {"type": "array", "items": {"type": "string"}},
-    "wants_next": {"type": "array", "items": {"type": "string"}},
-    "current_feeling": {"type": "string"},
-    "received_payoff": {"type": "array", "items": {"type": "string"}},
-    "confused_by": {"type": "array", "items": {"type": "string"}},
-    "losing_patience_with": {"type": "array", "items": {"type": "string"}},
-    "turn_page_reason": {"type": "string"}
+    "attention": {"type": "array", "items": {"type": "string"}},
+    "orientation": {"type": "string"},
+    "what_landed": {"type": "array", "items": {"type": "string"}},
+    "friction": {"type": "array", "items": {"type": "string"}},
+    "momentum": {"type": "string"}
   }
 }

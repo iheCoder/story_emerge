@@ -24,7 +24,7 @@ func (engine *Engine) observeReader(ctx context.Context, target story.TargetRead
 	if err != nil {
 		return story.ReaderObservation{}, err
 	}
-	recent, early := readerVisibleHistory(chapter, summaries)
+	recent, early := visibleHistory(chapter, summaries, number-1)
 
 	input, err := asPrettyJSON(readerInput{
 		TargetReader: target, PreviousChapter: previousChapter,

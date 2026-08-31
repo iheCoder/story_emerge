@@ -17,7 +17,7 @@ func TestReaderVisibleHistoryRetrievesOnlyRelevantEarlySummaries(t *testing.T) {
 		{Number: 5, Title: "清晨", Summary: "旅店在清晨开门"},
 	}
 
-	recent, early := readerVisibleHistory("阿禾在窗边再次看见那只蓝色纸鹤", summaries)
+	recent, early := visibleHistory("阿禾在窗边再次看见那只蓝色纸鹤", summaries, 0)
 
 	if len(recent) != 3 || recent[0].Number != 3 || recent[2].Number != 5 {
 		t.Fatalf("最近摘要窗口错误: %#v", recent)
@@ -37,9 +37,22 @@ func TestReaderVisibleHistoryDoesNotFillEarlyWindowWithoutEvidence(t *testing.T)
 		{Number: 4, Summary: "城门钟声"},
 	}
 
-	_, early := readerVisibleHistory("沙漠烈日", summaries)
+	_, early := visibleHistory("沙漠烈日", summaries, 0)
 	if len(early) != 0 {
 		t.Fatalf("无相关性时仍强行召回早期摘要: %#v", early)
+	}
+}
+
+func TestVisibleHistoryExcludesChapterAlreadyProvidedInFull(t *testing.T) {
+	// 场景：第五章全文已经单独提供，同时摘要仓库也含第五章摘要。
+	// 预期：最近窗口与早期检索都排除第五章，避免同一章在上下文里被重复加权。
+	summaries := numberedSummaries(6)
+	recent, early := visibleHistory("第五章全文", summaries, 5)
+
+	for _, summary := range append(recent, early...) {
+		if summary.Number == 5 {
+			t.Fatalf("已提供全文的章节仍进入摘要窗口: recent=%#v early=%#v", recent, early)
+		}
 	}
 }
 

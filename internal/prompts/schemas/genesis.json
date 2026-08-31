@@ -11,20 +11,19 @@
     "strings": {"type": "array", "items": {"type": "string"}},
     "target_reader": {
       "type": "object", "additionalProperties": false,
-      "required": ["name", "reading_history", "craves", "forgives", "drops_when", "binge_triggers"],
+      "required": ["portrait", "reads_for", "leaves_when"],
       "properties": {
-        "name": {"type": "string"}, "reading_history": {"type": "string"},
-        "craves": {"$ref": "#/$defs/strings"}, "forgives": {"$ref": "#/$defs/strings"},
-        "drops_when": {"$ref": "#/$defs/strings"}, "binge_triggers": {"$ref": "#/$defs/strings"}
+        "portrait": {"type": "string"},
+        "reads_for": {"type": "string"},
+        "leaves_when": {"type": "string"}
       }
     },
     "promise": {
       "type": "object", "additionalProperties": false,
-      "required": ["primary_pleasure", "supporting_pleasures", "must_deliver", "must_not_become"],
+      "required": ["core_experience", "must_remain", "must_not_become"],
       "properties": {
-        "primary_pleasure": {"type": "string"},
-        "supporting_pleasures": {"$ref": "#/$defs/strings"},
-        "must_deliver": {"$ref": "#/$defs/strings"},
+        "core_experience": {"type": "string"},
+        "must_remain": {"$ref": "#/$defs/strings"},
         "must_not_become": {"$ref": "#/$defs/strings"}
       }
     },
@@ -59,27 +58,25 @@
     },
     "arc": {
       "type": "object", "additionalProperties": false,
-      "required": ["name", "purpose", "completion_signals"],
+      "required": ["name", "purpose"],
       "properties": {
-        "name": {"type": "string"}, "purpose": {"type": "string"},
-        "completion_signals": {"$ref": "#/$defs/strings"}
+        "name": {"type": "string"}, "purpose": {"type": "string"}
       }
     },
     "track": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "role", "direction", "status"],
+      "required": ["id", "name", "direction", "status"],
       "properties": {
-        "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
+        "id": {"type": "string"}, "name": {"type": "string"},
         "direction": {"type": "string"}, "status": {"type": "string", "enum": ["ongoing", "completed"]}
       }
     },
     "outline": {
       "type": "object", "additionalProperties": false,
-      "required": ["version", "current_arc", "tracks", "future_directions"],
+      "required": ["version", "current_arc", "tracks"],
       "properties": {
         "version": {"type": "integer"}, "current_arc": {"$ref": "#/$defs/arc"},
-        "tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}},
-        "future_directions": {"$ref": "#/$defs/strings"}
+        "tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}}
       }
     },
     "character_state": {
@@ -87,23 +84,17 @@
       "required": ["character_id", "state"],
       "properties": {"character_id": {"type": "string"}, "state": {"type": "string"}}
     },
-    "durable_state": {
+    "situation_state": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "description"],
       "properties": {"id": {"type": "string"}, "description": {"type": "string"}}
     },
-    "track_progress": {
-      "type": "object", "additionalProperties": false,
-      "required": ["track_id", "progress"],
-      "properties": {"track_id": {"type": "string"}, "progress": {"type": "string"}}
-    },
     "initial_state": {
       "type": "object", "additionalProperties": false,
-      "required": ["character_states", "durable_states", "track_progress"],
+      "required": ["character_states", "situation_states"],
       "properties": {
         "character_states": {"type": "array", "items": {"$ref": "#/$defs/character_state"}},
-        "durable_states": {"type": "array", "items": {"$ref": "#/$defs/durable_state"}},
-        "track_progress": {"type": "array", "items": {"$ref": "#/$defs/track_progress"}}
+        "situation_states": {"type": "array", "items": {"$ref": "#/$defs/situation_state"}}
       }
     }
   }

@@ -64,12 +64,12 @@ func ValidateBible(bible StoryBible) error {
 
 func validateAudience(bible StoryBible) error {
 	reader := bible.TargetReader
-	if reader.Name == "" || reader.ReadingHistory == "" || len(reader.Craves) == 0 || len(reader.DropsWhen) == 0 {
-		return fmt.Errorf("目标读者必须具有具体身份、阅读经历、偏好和弃读点")
+	if strings.TrimSpace(reader.Portrait) == "" || strings.TrimSpace(reader.ReadsFor) == "" || strings.TrimSpace(reader.LeavesWhen) == "" {
+		return fmt.Errorf("目标读者必须具有具体画像、阅读动机和弃读边界")
 	}
 	promise := bible.NarrativePromise
-	if promise.PrimaryPleasure == "" || len(promise.MustDeliver) == 0 || len(promise.MustNotBecome) == 0 {
-		return fmt.Errorf("叙事承诺缺少首要快感、必须兑现或禁止滑向")
+	if strings.TrimSpace(promise.CoreExperience) == "" || len(promise.MustRemain) == 0 || len(promise.MustNotBecome) == 0 {
+		return fmt.Errorf("叙事承诺缺少核心体验、必须保持或禁止滑向")
 	}
 
 	return nil
@@ -85,7 +85,7 @@ func ValidateOutline(outline StoryOutline) error {
 		if track.ID == "" || track.Name == "" || seen[track.ID] {
 			return fmt.Errorf("Story Track ID 为空、重复或缺少名称: %s", track.ID)
 		}
-		if track.Role == "" || track.Direction == "" || !validTrackStatus[track.Status] {
+		if track.Direction == "" || !validTrackStatus[track.Status] {
 			return fmt.Errorf("Story Track 字段无效: %s", track.ID)
 		}
 		seen[track.ID] = true
@@ -115,19 +115,12 @@ func validateInitialState(genesis Genesis) error {
 	for _, character := range genesis.Bible.Characters {
 		characters[character.ID] = true
 	}
-	tracks := make(map[string]bool, len(genesis.Outline.Tracks))
-	for _, track := range genesis.Outline.Tracks {
-		tracks[track.ID] = true
-	}
 
 	if err := validateInitialCharacters(genesis.InitialState.CharacterStates, characters); err != nil {
 		return err
 	}
-	if err := validateInitialDurableStates(genesis.InitialState.DurableStates); err != nil {
-		return err
-	}
 
-	return validateInitialTrackProgress(genesis.InitialState.TrackProgress, tracks)
+	return validateInitialSituationStates(genesis.InitialState.SituationStates)
 }
 
 func validateInitialCharacters(states []CharacterState, known map[string]bool) error {
@@ -145,25 +138,13 @@ func validateInitialCharacters(states []CharacterState, known map[string]bool) e
 	return nil
 }
 
-func validateInitialDurableStates(states []DurableState) error {
+func validateInitialSituationStates(states []SituationState) error {
 	seen := make(map[string]bool, len(states))
 	for _, state := range states {
 		if state.ID == "" || state.Description == "" || seen[state.ID] {
-			return fmt.Errorf("初始长期状态无效: %s", state.ID)
+			return fmt.Errorf("初始局势状态无效: %s", state.ID)
 		}
 		seen[state.ID] = true
-	}
-
-	return nil
-}
-
-func validateInitialTrackProgress(progress []TrackProgress, known map[string]bool) error {
-	seen := make(map[string]bool, len(progress))
-	for _, item := range progress {
-		if !known[item.TrackID] || seen[item.TrackID] || item.Progress == "" {
-			return fmt.Errorf("初始 Track Progress 无效: %s", item.TrackID)
-		}
-		seen[item.TrackID] = true
 	}
 
 	return nil
@@ -181,12 +162,12 @@ func ValidateEditorDecision(decision EditorDecision, chapter int) error {
 	case EditorAccept:
 		return validateFinalizedEditorial(decision.StoryUpdate, decision.Summary, chapter)
 	case EditorRevise:
-		if strings.TrimSpace(decision.RevisionGuidance) == "" {
-			return fmt.Errorf("revise 缺少 Revision Guidance")
+		if strings.TrimSpace(decision.Guidance) == "" {
+			return fmt.Errorf("revise 缺少 Guidance")
 		}
 	case EditorReplan:
-		if strings.TrimSpace(decision.ReplanGuidance) == "" {
-			return fmt.Errorf("replan 缺少 Replan Guidance")
+		if strings.TrimSpace(decision.Guidance) == "" {
+			return fmt.Errorf("replan 缺少 Guidance")
 		}
 	}
 

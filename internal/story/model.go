@@ -39,19 +39,15 @@ type StoryBible struct {
 
 // TargetReader 必须像一个有具体经历和偏好的真人，而不是宽泛人口标签。
 type TargetReader struct {
-	Name           string   `json:"name"`
-	ReadingHistory string   `json:"reading_history"`
-	Craves         []string `json:"craves"`
-	Forgives       []string `json:"forgives"`
-	DropsWhen      []string `json:"drops_when"`
-	BingeTriggers  []string `json:"binge_triggers"`
+	Portrait   string `json:"portrait"`
+	ReadsFor   string `json:"reads_for"`
+	LeavesWhen string `json:"leaves_when"`
 }
 
 type NarrativePromise struct {
-	PrimaryPleasure     string   `json:"primary_pleasure"`
-	SupportingPleasures []string `json:"supporting_pleasures"`
-	MustDeliver         []string `json:"must_deliver"`
-	MustNotBecome       []string `json:"must_not_become"`
+	CoreExperience string   `json:"core_experience"`
+	MustRemain     []string `json:"must_remain"`
+	MustNotBecome  []string `json:"must_not_become"`
 }
 
 type StyleGuide struct {
@@ -72,23 +68,20 @@ type Character struct {
 
 // StoryOutline 只表达当前阶段和若干正在演化的力量，不分配逐章任务。
 type StoryOutline struct {
-	Version          int          `json:"version"`
-	CurrentArc       StoryArc     `json:"current_arc"`
-	Tracks           []StoryTrack `json:"tracks"`
-	FutureDirections []string     `json:"future_directions"`
+	Version    int          `json:"version"`
+	CurrentArc StoryArc     `json:"current_arc"`
+	Tracks     []StoryTrack `json:"tracks"`
 }
 
 type StoryArc struct {
-	Name              string   `json:"name"`
-	Purpose           string   `json:"purpose"`
-	CompletionSignals []string `json:"completion_signals"`
+	Name    string `json:"name"`
+	Purpose string `json:"purpose"`
 }
 
 // StoryTrack 没有题材类型。Status 只表示这股力量是否仍需要继续发展。
 type StoryTrack struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Role      string `json:"role"`
 	Direction string `json:"direction"`
 	Status    string `json:"status"`
 }
@@ -96,16 +89,14 @@ type StoryTrack struct {
 // InitialState 只保存正文开始前就必须长期维持的动态状态。
 type InitialState struct {
 	CharacterStates []CharacterState `json:"character_states"`
-	DurableStates   []DurableState   `json:"durable_states"`
-	TrackProgress   []TrackProgress  `json:"track_progress"`
+	SituationStates []SituationState `json:"situation_states"`
 }
 
 // State 是 HEAD 指向的精简快照，不承担小说历史数据库职责。
 type State struct {
 	Chapter         int              `json:"chapter"`
 	CharacterStates []CharacterState `json:"character_states"`
-	DurableStates   []DurableState   `json:"durable_states"`
-	TrackProgress   []TrackProgress  `json:"track_progress"`
+	SituationStates []SituationState `json:"situation_states"`
 	OutlineVersion  int              `json:"outline_version"`
 	StoryStatus     string           `json:"story_status"`
 }
@@ -117,23 +108,19 @@ type CharacterState struct {
 	State       string `json:"state"`
 }
 
-type DurableState struct {
+// SituationState 只保存会改变人物可选行动或客观现实的当前局势。
+// 它不是章节流水、悬念清单或 Outline 的副本；不再成立的局势应由后续更新删除。
+type SituationState struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
 }
 
-type TrackProgress struct {
-	TrackID  string `json:"track_id"`
-	Progress string `json:"progress"`
-}
-
-// StoryUpdate 只描述最终正文造成的长期变化。三个 change 集合都允许为空。
+// StoryUpdate 只描述最终正文造成的长期变化。两个 change 集合都允许为空。
 type StoryUpdate struct {
-	Chapter             int                    `json:"chapter"`
-	CharacterChanges    []CharacterStateChange `json:"character_changes"`
-	DurableStateChanges []DurableStateChange   `json:"durable_state_changes"`
-	TrackChanges        []TrackProgressChange  `json:"track_progress_changes"`
-	StoryStatus         string                 `json:"story_status"`
+	Chapter               int                    `json:"chapter"`
+	CharacterChanges      []CharacterStateChange `json:"character_changes"`
+	SituationStateChanges []SituationStateChange `json:"situation_state_changes"`
+	StoryStatus           string                 `json:"story_status"`
 }
 
 type CharacterStateChange struct {
@@ -141,16 +128,11 @@ type CharacterStateChange struct {
 	State       string `json:"state"`
 }
 
-// DurableStateChange 使用 upsert/remove 表达有限、可验证的当前态变化。
-type DurableStateChange struct {
+// SituationStateChange 使用 upsert/remove 表达有限、可验证的客观局势变化。
+type SituationStateChange struct {
 	Operation   string `json:"operation"`
 	ID          string `json:"id"`
 	Description string `json:"description"`
-}
-
-type TrackProgressChange struct {
-	TrackID  string `json:"track_id"`
-	Progress string `json:"progress"`
 }
 
 // ChapterSummary 是正文的读者可见短期记忆，独立于长期 Story State。
@@ -171,23 +153,19 @@ const (
 
 // EditorDecision 只判断当前结果是否严重到值得干预，不承担逐段导演职责。
 type EditorDecision struct {
-	Action           EditorAction   `json:"action"`
-	Reason           string         `json:"reason"`
-	RevisionGuidance string         `json:"revision_guidance"`
-	ReplanGuidance   string         `json:"replan_guidance"`
-	Observations     []string       `json:"observations"`
-	StoryUpdate      StoryUpdate    `json:"story_update"`
-	Summary          ChapterSummary `json:"reader_visible_summary"`
+	Action      EditorAction   `json:"action"`
+	Reason      string         `json:"reason"`
+	Guidance    string         `json:"guidance"`
+	StoryUpdate StoryUpdate    `json:"story_update"`
+	Summary     ChapterSummary `json:"reader_visible_summary"`
 }
 
 // EditorDecisionRecord 是正式历史需要保留的最小编辑轨迹。
 // Story Update 和摘要各有自己的单一文件，不在这里重复保存。
 type EditorDecisionRecord struct {
-	Action           EditorAction `json:"action"`
-	Reason           string       `json:"reason"`
-	RevisionGuidance string       `json:"revision_guidance,omitempty"`
-	ReplanGuidance   string       `json:"replan_guidance,omitempty"`
-	Observations     []string     `json:"observations"`
+	Action   EditorAction `json:"action"`
+	Reason   string       `json:"reason"`
+	Guidance string       `json:"guidance,omitempty"`
 }
 
 // EditorFinalizeResult 在干预预算耗尽后只提炼状态，不再评价或阻止正文。
@@ -206,14 +184,10 @@ type EditorReviewLog struct {
 
 // ReaderObservation 是目标读者对当前章的一次独立观察。
 type ReaderObservation struct {
-	Chapter            int      `json:"chapter"`
-	CaresAbout         []string `json:"cares_about"`
-	UnderstandsGoal    string   `json:"understands_goal"`
-	MemorableMoments   []string `json:"memorable_moments"`
-	WantsNext          []string `json:"wants_next"`
-	CurrentFeeling     string   `json:"current_feeling"`
-	ReceivedPayoff     []string `json:"received_payoff"`
-	ConfusedBy         []string `json:"confused_by"`
-	LosingPatienceWith []string `json:"losing_patience_with"`
-	TurnPageReason     string   `json:"turn_page_reason"`
+	Chapter     int      `json:"chapter"`
+	Attention   []string `json:"attention"`
+	Orientation string   `json:"orientation"`
+	WhatLanded  []string `json:"what_landed"`
+	Friction    []string `json:"friction"`
+	Momentum    string   `json:"momentum"`
 }

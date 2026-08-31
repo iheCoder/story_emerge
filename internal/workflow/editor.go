@@ -93,27 +93,25 @@ func newEditorInput(bible story.StoryBible, current story.State, reader *story.R
 
 func decisionRecord(decision story.EditorDecision) story.EditorDecisionRecord {
 	return story.EditorDecisionRecord{
-		Action: decision.Action, Reason: decision.Reason,
-		RevisionGuidance: decision.RevisionGuidance, ReplanGuidance: decision.ReplanGuidance,
-		Observations: append([]string(nil), decision.Observations...),
+		Action: decision.Action, Reason: decision.Reason, Guidance: decision.Guidance,
 	}
 }
 
 func (engine *Engine) applyIntervention(ctx context.Context, bible story.StoryBible, current story.State, reader *story.ReaderObservation, work chapterWork, decision story.EditorDecision) (chapterWork, error) {
 	if decision.Action == story.EditorRevise {
-		chapter, err := engine.reviseDraft(ctx, work, decision.RevisionGuidance)
+		chapter, err := engine.reviseDraft(ctx, work, decision.Guidance)
 		work.chapter = chapter
 		return work, err
 	}
 
-	outline, err := engine.replanOutline(ctx, bible, current, reader, work, decision.ReplanGuidance)
+	outline, err := engine.replanOutline(ctx, bible, current, reader, work, decision.Guidance)
 	if err != nil {
 		return work, err
 	}
 	work.outline, work.replanned = outline, true
 	work.context.Outline = outline
 
-	chapter, err := engine.rewriteAfterReplan(ctx, work, decision.ReplanGuidance)
+	chapter, err := engine.rewriteAfterReplan(ctx, work, decision.Guidance)
 	work.chapter = chapter
 	return work, err
 }

@@ -45,3 +45,22 @@ func TestStructuredSchemasMatchNewPersistentArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemasDoNotReintroduceRemovedDuplicateState(t *testing.T) {
+	// 场景：结构减法已经把 Track Progress、重复 Editor 意见和九字段 Reader 收缩。
+	// 预期：结构化契约不再要求旧字段，避免模型继续生成已经没有消费者的数据。
+	for _, name := range []string{"genesis", "story_outline", "editor_decision", "editor_finalize", "reader_observation"} {
+		content, err := Schema(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, removed := range []string{
+			"track_progress", "future_directions", "completion_signals", "revision_guidance",
+			"replan_guidance", "observations", "turn_page_reason", "current_feeling",
+		} {
+			if strings.Contains(string(content), removed) {
+				t.Fatalf("Schema %s 仍包含已删除字段 %q", name, removed)
+			}
+		}
+	}
+}

@@ -29,25 +29,11 @@ type Engine struct {
 	generator llm.Generator
 	store     *store.Store
 	reporter  Reporter
-	options   Options
 	maxCalls  int
 	usedCalls int
 }
 
-// Options 只承载显式、可审计的工作流变体。
-// 默认生产入口不传任何选项；实验代码可以注入 Writer 倾向，但不能改写 Bible、Outline、
-// Editor 权限或章节提交协议，因此实验变量不会悄悄扩散成新的生产规则。
-type Options struct {
-	WriterGuidance string
-}
-
 func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Reporter) (*Engine, error) {
-	return NewWithOptions(generator, files, maxCalls, reporter, Options{})
-}
-
-// NewWithOptions 创建带显式实验选项的 Engine。
-// 该入口主要供独立 eval 使用；空 Options 与 New 的生产行为完全一致。
-func NewWithOptions(generator llm.Generator, files *store.Store, maxCalls int, reporter Reporter, options Options) (*Engine, error) {
 	// 构造时恢复历史调用计数，使重启不会重置预算；文件统计失败则拒绝启动，
 	// 因为在未知成本下继续生成可能超出用户设定。
 	// 恢复已有成功调用数，保证重启不重置项目预算。
@@ -58,7 +44,7 @@ func NewWithOptions(generator llm.Generator, files *store.Store, maxCalls int, r
 
 	// 组装无状态生成器、文件仓库和可选进度播报器。
 	return &Engine{
-		generator: generator, store: files, reporter: reporter, options: options,
+		generator: generator, store: files, reporter: reporter,
 		maxCalls: maxCalls, usedCalls: usedCalls,
 	}, nil
 }
@@ -252,25 +238,12 @@ func generateText(
 	maxTokens int,
 	temperature float64,
 ) (string, error) {
-	return generateTextWithGuidance(ctx, engine, stage, templateName, input, "", maxTokens, temperature)
-}
-
-// generateTextWithGuidance 只为显式实验变体追加系统级创作指导。
-// 空 guidance 直接保留嵌入 Prompt 原文，确保正常生产调用不存在隐藏差异。
-func generateTextWithGuidance(
-	ctx context.Context,
-	engine *Engine,
-	stage, templateName, input, guidance string,
-	maxTokens int,
-	temperature float64,
-) (string, error) {
 	// 纯文本阶段不需要 Schema，但仍复用 generate 的预算、超时、重试和用量记录机制。
 	// 读取纯文本角色 Prompt。
 	instructions, err := prompts.Template(templateName)
 	if err != nil {
 		return "", err
 	}
-	instructions = appendExperimentalGuidance(instructions, guidance)
 
 	// 复用统一预算/重试/用量链路生成正文。
 	result, err := engine.generate(ctx, llm.Request{
@@ -283,13 +256,4 @@ func generateTextWithGuidance(
 
 	// 规范正文首尾空白，保证保存文件拥有稳定换行。
 	return strings.TrimSpace(result.Text) + "\n", nil
-}
-
-func appendExperimentalGuidance(instructions, guidance string) string {
-	guidance = strings.TrimSpace(guidance)
-	if guidance == "" {
-		return instructions
-	}
-
-	return strings.TrimSpace(instructions) + "\n\n# 本次独立实验指导\n\n" + guidance
 }
