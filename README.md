@@ -15,7 +15,7 @@ story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文�
 
     cp config.example.yaml config.yaml
     # 编辑 config.yaml，填写各供应商密钥和 Architect/Writer/Editor/Reader 模型
-    go run ./cmd/story-emerge serve --config config.yaml
+    go run ./cmd/story-emerge
 
 然后打开浏览器，在页面中填写故事灵感并选择篇幅。Web 服务会自动为每个故事生成项目目录。
 
@@ -31,6 +31,8 @@ story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文�
 ## Web
 
     go run ./cmd/story-emerge serve --config config.yaml --addr 127.0.0.1:8787
+
+直接运行和显式执行 `serve` 的效果相同；后者适合需要调整监听地址或数据目录时使用。
 
 Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后可以生成下一章，或让 Agent 持续写到 `story_status=completed`。
 

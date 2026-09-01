@@ -38,10 +38,11 @@ func main() {
 func execute(ctx context.Context, arguments []string) error {
 	// 将第一个参数解释为“用户意图”，其余参数交给对应子命令解析。
 	// 这样每条命令都有独立的 flag 集合，新增命令时不会污染已有参数。
-	// 没有子命令时展示帮助，不进入任何文件或模型操作。
+	// Web 是产品的默认入口
+	// 用户不需要先理解 serve 这个进程级命令。serve 仍作为显式别名保留，
+	// 便于需要传递 --addr、--data 等运行参数时使用。
 	if len(arguments) == 0 {
-		printUsage()
-		return nil
+		return serveWeb(ctx, nil)
 	}
 
 	// 根据命令名转交给对应处理器；处理器各自负责参数校验和业务副作用。
@@ -229,10 +230,11 @@ func newEngine(roleConfigs map[string]llm.Config, files *store.Store, maxCalls i
 // printUsage 展示最小可用工作流和 YAML 配置入口。
 func printUsage() {
 	// 使用一段固定帮助文本而不是自动拼接 flag，保证用户第一次接触项目时
-	// 先看到完整的“启动 Web—续写—查看—导出”主流程。
+	// 先看到完整的“直接运行启动 Web—续写—查看—导出”主流程。
 	fmt.Print(`story-emerge：状态化中文中篇小说 Agent
 
 用法：
+  story-emerge                         # 直接启动 Web
   story-emerge serve --config config.yaml --addr 127.0.0.1:8787
   story-emerge run --project novels/demo --config config.yaml
   story-emerge status --project novels/demo
