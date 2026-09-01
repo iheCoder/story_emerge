@@ -10,8 +10,6 @@ type Project struct {
 	Name          string    `json:"name"`
 	Idea          string    `json:"idea"`
 	LengthProfile string    `json:"length_profile,omitempty"`
-	Provider      string    `json:"provider"`
-	Model         string    `json:"model"`
 	MaxCalls      int       `json:"max_calls"`
 	CreatedAt     time.Time `json:"created_at"`
 }

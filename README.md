@@ -13,32 +13,41 @@ story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文�
 
 需要 Go 1.24 或更高版本。
 
-    export DEEPSEEK_API_KEY="你的密钥"
-    go run ./cmd/story-emerge new \
-      --idea-file examples/machine-last-ten-seconds.md \
-      --out novels/machine-last-ten-seconds \
-      --provider deepseek \
-      --length medium
+    cp config.example.yaml config.yaml
+    # 编辑 config.yaml，填写各供应商密钥和 Architect/Writer/Editor/Reader 模型
+    go run ./cmd/story-emerge serve --config config.yaml
 
-    # 最多继续三章；传 0 则写到故事状态自然完成
+然后打开浏览器，在页面中填写故事灵感并选择篇幅。Web 服务会自动为每个故事生成项目目录。
+
+命令行只保留项目维护操作。例如最多继续三章；传 0 则写到故事状态自然完成：
+
     go run ./cmd/story-emerge run \
       --project novels/machine-last-ten-seconds \
+      --config config.yaml \
       --chapters 3
 
 `length` 可取 `short`、`medium`、`long`、`epic`。它只表示全书规模，不会变成固定章数、单章字数或 scene 配额。
 
 ## Web
 
-    go run ./cmd/story-emerge serve --provider auto --addr 127.0.0.1:8787
+    go run ./cmd/story-emerge serve --config config.yaml --addr 127.0.0.1:8787
 
 Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后可以生成下一章，或让 Agent 持续写到 `story_status=completed`。
+
+## 模型配置
+
+应用级模型配置位于 `config.yaml`，示例见 [config.example.yaml](config.example.yaml)。
+`providers` 配置 API Key 和端点，`roles` 为每个长期工作流角色单独绑定供应商与模型。
+修改配置后，命令行下一次运行会使用新的角色模型；Web 服务需要重启后读取新配置。模型配置不会写入项目目录。
+
+真实的 `config.yaml` 已加入 `.gitignore`，请不要把包含密钥的配置提交到仓库。
 
 ## 项目文件
 
     novels/<name>/
     ├── brief.md                 原始点子
     ├── story.json / story.md    Story Bible、Story Spine 与目标读者
-    ├── project.json             模型、规模意图与调用预算
+    ├── project.json             作品身份、规模意图与调用预算
     ├── HEAD                     当前完整提交
     ├── outlines/                Current Arc 与 Story Tracks 的版本
     ├── chapters/                最终正文

@@ -1,5 +1,5 @@
 // Package llm 提供一层很薄的 Responses API 客户端。
-// OpenAI 与 DeepSeek 使用同一协议，差异只保留在端点、密钥环境变量和默认模型中。
+// OpenAI 与 DeepSeek 使用同一协议，供应商差异由上层 YAML 配置解析后传入。
 package llm
 
 import (
@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -19,10 +18,10 @@ import (
 // 模型网关可能返回很长的 HTML/调试文本；截断它既保护日志可读性，也避免异常响应占用过多内存。
 const maxErrorBodyBytes = 8 << 10
 
-// Config 描述一次模型调用所需的连接信息。
-// APIKey 只在内存中使用，不会被序列化到小说项目文件；Provider/Model 会写入 project.json 以便恢复。
+// Config 描述一个角色调用模型所需的连接信息。
+// APIKey 只在内存中使用，不会被序列化到小说项目文件。
 type Config struct {
-	Provider string        // 供应商标识，用于日志和默认配置选择。
+	Provider string        // 供应商标识，用于日志和诊断。
 	Model    string        // 实际请求使用的模型名。
 	Endpoint string        // Responses API 端点，可被本地代理覆盖。
 	APIKey   string        // 仅内存持有的密钥，不写入项目文件。
@@ -33,6 +32,7 @@ type Config struct {
 // Instructions 约束模型角色，Input 携带本阶段上下文；Schema 非空时要求模型返回严格 JSON。
 type Request struct {
 	Stage           string         // 工作流阶段名，用于错误、进度和用量记录。
+	Role            string         // 工作流角色名，用于选择该角色绑定的模型客户端。
 	Instructions    string         // 角色级系统指令。
 	Input           string         // 本阶段结构化上下文或正文输入。
 	SchemaName      string         // JSON Schema 名称；Schema 为空时不发送。
@@ -71,68 +71,6 @@ type Generator interface {
 type Client struct {
 	config Config
 	http   *http.Client
-}
-
-// ConfigFromEnv 集中处理提供商差异，业务代码无需感知具体平台。
-func ConfigFromEnv(provider, model string) (Config, error) {
-	// 这里是唯一的提供商分流点：调用方不需要知道密钥变量名和端点规则。
-	// provider 做大小写和空白归一化，但 model 保留调用方的精确值以便严格校验。
-	// 归一化并分派提供商。
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "deepseek":
-		return deepSeekConfig(model)
-	case "openai":
-		return openAIConfig(model)
-	default:
-		return Config{}, fmt.Errorf("不支持的模型提供商: %s", provider)
-	}
-}
-
-// deepSeekConfig 生成项目约定的 DeepSeek Flash 配置。
-func deepSeekConfig(model string) (Config, error) {
-	// 项目锁定 DeepSeek Flash：成本和延迟更适合长篇试跑，
-	// 同时避免模型能力差异导致提示词调优结果不可复现。
-	// 未指定模型时使用默认的 Flash 模型。
-	if model == "" {
-		model = "deepseek-v4-flash"
-	}
-
-	// 显式指定非 Flash 模型时立即拒绝，避免悄悄扩大成本和能力变量。
-	if model != "deepseek-v4-flash" {
-		return Config{}, fmt.Errorf("DeepSeek 只允许使用 deepseek-v4-flash")
-	}
-
-	// 读取密钥并组装最终连接配置。
-	return configWithKey("deepseek", model, "https://api.deepseek.com/responses", "DEEPSEEK_API_KEY")
-}
-
-// openAIConfig 生成 OpenAI Responses API 配置，支持调用方覆盖默认模型。
-func openAIConfig(model string) (Config, error) {
-	// OpenAI 默认模型只在未指定时生效；显式传入的模型交由服务端验证。
-	// 未指定模型时使用 OpenAI 默认配置。
-	if model == "" {
-		model = "gpt-5.6-luna"
-	}
-
-	// 读取密钥并保留调用方显式指定的模型名。
-	return configWithKey("openai", model, "https://api.openai.com/v1/responses", "OPENAI_API_KEY")
-}
-
-// configWithKey 从指定环境变量读取密钥，并应用可选的本地代理端点。
-func configWithKey(provider, model, endpoint, keyName string) (Config, error) {
-	// 密钥从环境变量读取，既避免落盘泄露，也让同一项目可以在不同机器切换账号。
-	// STORY_EMERGE_BASE_URL 仅用于本地代理/测试替换端点，仍自动补上 Responses API 路径。
-	// 从环境读取密钥；缺少密钥时在启动阶段失败。
-	key := strings.TrimSpace(os.Getenv(keyName))
-	if key == "" {
-		return Config{}, fmt.Errorf("缺少环境变量 %s", keyName)
-	}
-
-	// 应用可选的代理地址。
-	if override := strings.TrimSpace(os.Getenv("STORY_EMERGE_BASE_URL")); override != "" {
-		endpoint = strings.TrimRight(override, "/") + "/responses"
-	}
-	return Config{Provider: provider, Model: model, Endpoint: endpoint, APIKey: key}, nil
 }
 
 // NewClient 校验配置并创建带默认超时的 HTTP 客户端。

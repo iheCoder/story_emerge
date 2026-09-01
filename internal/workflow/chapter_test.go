@@ -51,6 +51,7 @@ func TestChapterFlowUsesEditorAndKeepsReaderIndependent(t *testing.T) {
 
 	assertAuthorContexts(t, fake)
 	assertReaderContext(t, fake)
+	assertRoleRouting(t, fake)
 	assertPreviousChapterSummaryExcluded(t, fake)
 	assertCommittedChapter(t, files)
 }
@@ -291,6 +292,26 @@ func assertReaderContext(t *testing.T, fake *scriptedGenerator) {
 	}
 }
 
+func assertRoleRouting(t *testing.T, fake *scriptedGenerator) {
+	t.Helper()
+
+	// 角色绑定必须独立于阶段名称；同一角色的不同业务模式仍应路由到同一模型配置。
+	expected := map[string]string{
+		"architect":                   llm.RoleArchitect,
+		"chapter_001_write":           llm.RoleWriter,
+		"chapter_001_editor_review_1": llm.RoleEditor,
+		"chapter_001_reader":          llm.RoleReader,
+		"chapter_002_write":           llm.RoleWriter,
+		"chapter_002_editor_review_1": llm.RoleEditor,
+		"chapter_002_reader":          llm.RoleReader,
+	}
+	for stage, role := range expected {
+		if got := fake.requests[stage].Role; got != role {
+			t.Fatalf("阶段 %s 路由角色错误: got=%q want=%q", stage, got, role)
+		}
+	}
+}
+
 func assertPreviousChapterSummaryExcluded(t *testing.T, fake *scriptedGenerator) {
 	t.Helper()
 
@@ -315,7 +336,7 @@ func assertCommittedChapter(t *testing.T, files *store.Store) {
 }
 
 func testProject() story.Project {
-	return story.Project{Name: "test", Idea: "阿禾替朋友送一封信", LengthProfile: "epic", Provider: "fake", Model: "fake", MaxCalls: 20}
+	return story.Project{Name: "test", Idea: "阿禾替朋友送一封信", LengthProfile: "epic", MaxCalls: 20}
 }
 
 func testGenesis() story.Genesis {

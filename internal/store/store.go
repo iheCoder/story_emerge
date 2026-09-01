@@ -95,9 +95,9 @@ func (store *Store) Create(project story.Project, genesis story.Genesis) error {
 	return store.writeText("HEAD", "000\n")
 }
 
-// LoadProject 读取创建时固化的运行配置。
+// LoadProject 读取项目的作品身份和运行预算。
 func (store *Store) LoadProject() (story.Project, error) {
-	// project.json 是运行配置的唯一来源；不从环境变量覆盖，保证恢复运行沿用创建时契约。
+	// project.json 保存故事自身的持久化元数据；模型连接配置由应用级 config.yaml 提供。
 	var project story.Project
 	err := store.readJSON("project.json", &project)
 	return project, err

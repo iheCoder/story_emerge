@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"story_emerge/internal/llm"
 	"story_emerge/internal/story"
 )
 
@@ -73,7 +74,7 @@ func (engine *Engine) reviewDraft(ctx context.Context, bible story.StoryBible, c
 
 	reviewNumber := len(work.reviewLog.Decisions) + 1
 	stage := chapterStage(work.context.NextChapter, fmt.Sprintf("editor_review_%d", reviewNumber))
-	decision, err := generateJSON[story.EditorDecision](ctx, engine, stage, "editor", "editor_decision", input, editorMaxOutputTokens, "low")
+	decision, err := generateJSON[story.EditorDecision](ctx, engine, stage, llm.RoleEditor, "editor", "editor_decision", input, editorMaxOutputTokens, "low")
 	if err != nil {
 		return story.EditorDecision{}, err
 	}
@@ -123,7 +124,7 @@ func (engine *Engine) finalizeAutoAccepted(ctx context.Context, bible story.Stor
 		return work, err
 	}
 
-	result, err := generateJSON[story.EditorFinalizeResult](ctx, engine, chapterStage(work.context.NextChapter, "editor_finalize"), "editor_finalize", "editor_finalize", input, editorMaxOutputTokens, "low")
+	result, err := generateJSON[story.EditorFinalizeResult](ctx, engine, chapterStage(work.context.NextChapter, "editor_finalize"), llm.RoleEditor, "editor_finalize", "editor_finalize", input, editorMaxOutputTokens, "low")
 	if err != nil {
 		return work, err
 	}

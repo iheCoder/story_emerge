@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	appconfig "story_emerge/internal/config"
 	"story_emerge/internal/llm"
 	"story_emerge/internal/store"
-	"story_emerge/internal/story"
 	"story_emerge/internal/webapp"
 	"story_emerge/internal/workflow"
 )
@@ -46,8 +46,6 @@ func execute(ctx context.Context, arguments []string) error {
 
 	// 根据命令名转交给对应处理器；处理器各自负责参数校验和业务副作用。
 	switch arguments[0] {
-	case "new":
-		return runNew(ctx, arguments[1:])
 	case "run":
 		return runNovel(ctx, arguments[1:])
 	case "status":
@@ -60,7 +58,7 @@ func execute(ctx context.Context, arguments []string) error {
 		printUsage()
 		return nil
 	default:
-		return fmt.Errorf("未知命令 %q；可用命令：new、run、status、export、serve", arguments[0])
+		return fmt.Errorf("未知命令 %q；可用命令：run、status、export、serve", arguments[0])
 	}
 }
 
@@ -69,17 +67,16 @@ func serveWeb(ctx context.Context, arguments []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	address := flags.String("addr", "127.0.0.1:8787", "Web 监听地址")
 	dataRoot := flags.String("data", "novels", "小说项目保存目录")
-	provider := flags.String("provider", "auto", "模型提供商：auto、deepseek 或 openai")
-	model := flags.String("model", "", "覆盖提供商默认模型")
+	configFile := flags.String("config", "config.yaml", "模型配置 YAML 文件")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 
-	selectedProvider, err := resolveWebProvider(*provider)
+	roleConfigs, err := loadRoleConfigs(*configFile)
 	if err != nil {
 		return err
 	}
-	runtime, err := webapp.NewWorkflowRuntime(selectedProvider, *model)
+	runtime, err := webapp.NewWorkflowRuntime(roleConfigs)
 	if err != nil {
 		return err
 	}
@@ -88,20 +85,6 @@ func serveWeb(ctx context.Context, arguments []string) error {
 		return err
 	}
 	return listenWeb(ctx, *address, application.Handler())
-}
-
-// resolveWebProvider 让默认 Web 启动命令使用当前已经配置好的模型密钥。
-func resolveWebProvider(provider string) (string, error) {
-	if provider != "auto" {
-		return provider, nil
-	}
-	if strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")) != "" {
-		return "deepseek", nil
-	}
-	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
-		return "openai", nil
-	}
-	return "", fmt.Errorf("缺少 DEEPSEEK_API_KEY 或 OPENAI_API_KEY")
 }
 
 // listenWeb 承担监听和关闭时序，业务 handler 不感知进程信号。
@@ -128,53 +111,6 @@ func errorsIsServerClosed(err error) bool {
 	return err == http.ErrServerClosed
 }
 
-// runNew 读取创作点子、解析模型配置并初始化一个全新的小说项目。
-func runNew(ctx context.Context, arguments []string) error {
-	// new 的职责是把人类可读的点子和运行配置落成一个可恢复的项目，
-	// 初始化阶段（生成 Bible/初始状态）仍由 Engine 统一执行。
-
-	// 解析创建项目所需的命令行参数。
-	// 所有默认值在这里一次确定，随后写入 project.json，保证项目可复现。
-	flags := flag.NewFlagSet("new", flag.ContinueOnError)
-	ideaFile := flags.String("idea-file", "", "小说点子 Markdown 文件")
-	output := flags.String("out", "", "小说项目输出目录")
-	name := flags.String("name", "", "项目名称；默认使用输出目录名")
-	provider := flags.String("provider", "deepseek", "模型提供商：deepseek 或 openai")
-	model := flags.String("model", "", "覆盖提供商默认模型")
-	length := flags.String("length", "medium", "故事规模意图：short、medium、long 或 epic")
-	maxCalls := flags.Int("max-calls", 220, "整个项目允许的逻辑模型调用数")
-	if err := flags.Parse(arguments); err != nil {
-		return err
-	}
-
-	// 读取点子并规范化输出路径。
-	// 这一步先于模型配置，避免缺少本地输入时浪费任何模型调用。
-	idea, root, err := readNewInputs(*ideaFile, *output)
-	if err != nil {
-		return err
-	}
-
-	// 解析模型提供商和密钥。
-	// 密钥只从环境变量进入内存，不随项目配置落盘。
-	config, err := llm.ConfigFromEnv(*provider, *model)
-	if err != nil {
-		return err
-	}
-
-	// 组装项目契约和工作流引擎。
-	// Engine 统一负责状态机，CLI 不直接参与章节生成细节。
-	project := newProject(*name, root, idea, config, *length, *maxCalls)
-	engine, err := newEngine(config, store.New(root), project.MaxCalls)
-	if err != nil {
-		return err
-	}
-
-	// 调用一次性 Architect 建立 Bible、大纲、Reader 和第 0 章状态。
-	// 只有 Initialize 成功，输出目录才会拥有可继续运行的 HEAD。
-	_, err = engine.Initialize(ctx, project)
-	return err
-}
-
 // runNovel 从项目 HEAD 恢复状态并按 limit 继续生成章节。
 func runNovel(ctx context.Context, arguments []string) error {
 	// run 永远从磁盘上的 project.json 和 HEAD 恢复，不把进度依赖在进程内存里。
@@ -183,6 +119,7 @@ func runNovel(ctx context.Context, arguments []string) error {
 	// 解析并校验项目路径。
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	root := flags.String("project", "", "小说项目目录")
+	configFile := flags.String("config", "config.yaml", "模型配置 YAML 文件")
 	limit := flags.Int("chapters", 0, "本次最多写几章；0 表示写到故事自然完成")
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -191,22 +128,21 @@ func runNovel(ctx context.Context, arguments []string) error {
 		return fmt.Errorf("必须提供 --project")
 	}
 
-	// 从磁盘读取项目契约。
-	// 运行时使用 project.json 中的 provider/model，而不是用当前命令行默认值覆盖历史配置。
+	// 从磁盘读取项目契约；故事进度在项目中，模型连接配置由当前 YAML 提供。
 	files := store.New(*root)
 	project, err := files.LoadProject()
 	if err != nil {
 		return err
 	}
 
-	// 根据项目契约加载模型客户端。
-	config, err := llm.ConfigFromEnv(project.Provider, project.Model)
+	// 读取本次运行使用的角色模型配置。
+	roleConfigs, err := loadRoleConfigs(*configFile)
 	if err != nil {
 		return err
 	}
 
 	// 创建可恢复引擎并继续章节状态机。
-	engine, err := newEngine(config, files, project.MaxCalls)
+	engine, err := newEngine(roleConfigs, files, project.MaxCalls)
 	if err != nil {
 		return err
 	}
@@ -262,57 +198,21 @@ func exportNovel(arguments []string) error {
 	return nil
 }
 
-// readNewInputs 校验 new 的文件参数，并返回去空白的点子和绝对输出路径。
-func readNewInputs(ideaFile, output string) (string, string, error) {
-	// 在真正创建目录前先校验两个必需输入，并将输出目录规范化为绝对路径。
-	// 绝对路径能避免从不同工作目录运行 CLI 时产生两份看似相同的项目。
-
-	// 确认输入参数存在。
-	if strings.TrimSpace(ideaFile) == "" || strings.TrimSpace(output) == "" {
-		return "", "", fmt.Errorf("new 必须提供 --idea-file 和 --out")
-	}
-
-	// 读取用户原始点子，保留其内容作为项目审计材料。
-	content, err := os.ReadFile(ideaFile)
+// loadRoleConfigs 读取并解析当前进程使用的全局角色模型配置。
+func loadRoleConfigs(path string) (map[string]llm.Config, error) {
+	settings, err := appconfig.Load(path)
 	if err != nil {
-		return "", "", fmt.Errorf("读取创作点子失败: %w", err)
+		return nil, err
 	}
-
-	// 把输出目录转换为绝对路径，交给 Store 做后续创建和写入。
-	absolute, err := filepath.Abs(output)
-	if err != nil {
-		return "", "", err
-	}
-	return strings.TrimSpace(string(content)), absolute, nil
+	return settings.RoleConfigs()
 }
 
-// newProject 把 CLI 参数固化为项目契约，后续运行不再依赖本次命令行进程。
-func newProject(
-	name, root, idea string,
-	config llm.Config,
-	length string, maxCalls int,
-) story.Project {
-	// Project 保存后会成为后续阶段的运行契约：规模意图、模型和调用预算
-	// 都从这里读取；规模意图不会被转换为章节或字数配额。
-	// 未提供项目名时从输出目录推导稳定名称。
-	if strings.TrimSpace(name) == "" {
-		name = filepath.Base(root)
-	}
-
-	// 组装并返回会写入 project.json 的不可变项目契约。
-	return story.Project{
-		Name: name, Idea: idea,
-		Provider: config.Provider, Model: config.Model,
-		LengthProfile: length, MaxCalls: maxCalls, CreatedAt: time.Now().UTC(),
-	}
-}
-
-// newEngine 组装模型、持久化和 CLI 进度输出三类依赖。
-func newEngine(config llm.Config, files *store.Store, maxCalls int) (*workflow.Engine, error) {
+// newEngine 组装按角色路由的模型、持久化和 CLI 进度输出三类依赖。
+func newEngine(roleConfigs map[string]llm.Config, files *store.Store, maxCalls int) (*workflow.Engine, error) {
 	// 将模型客户端、文件存储和进度播报器组装成 Engine。
 	// reporter 只负责给 CLI 提供可见反馈，不参与生成决策，便于测试时替换成空实现。
-	// 创建并校验模型客户端。
-	client, err := llm.NewClient(config)
+	// 创建并校验按角色分发的模型客户端。
+	client, err := llm.NewRoleClient(roleConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -326,21 +226,19 @@ func newEngine(config llm.Config, files *store.Store, maxCalls int) (*workflow.E
 	return workflow.New(client, files, maxCalls, reporter)
 }
 
-// printUsage 展示最小可用工作流和密钥环境变量。
+// printUsage 展示最小可用工作流和 YAML 配置入口。
 func printUsage() {
 	// 使用一段固定帮助文本而不是自动拼接 flag，保证用户第一次接触项目时
-	// 先看到完整的“创建—运行—查看—导出”主流程。
+	// 先看到完整的“启动 Web—续写—查看—导出”主流程。
 	fmt.Print(`story-emerge：状态化中文中篇小说 Agent
 
 用法：
-  story-emerge new --idea-file idea.md --out novels/demo --provider deepseek
-  story-emerge run --project novels/demo
+  story-emerge serve --config config.yaml --addr 127.0.0.1:8787
+  story-emerge run --project novels/demo --config config.yaml
   story-emerge status --project novels/demo
   story-emerge export --project novels/demo
-  story-emerge serve --provider auto --addr 127.0.0.1:8787
 
-密钥：
-  DeepSeek 使用 DEEPSEEK_API_KEY
-  OpenAI 使用 OPENAI_API_KEY
+模型配置：
+  复制 config.example.yaml 为 config.yaml，并分别配置各角色的 provider/model
 `)
 }

@@ -137,7 +137,7 @@ func asPrettyJSON(value any) (string, error) {
 func generateJSON[T any](
 	ctx context.Context,
 	engine *Engine,
-	stage, templateName, schemaName, input string,
+	stage, role, templateName, schemaName, input string,
 	maxTokens int,
 	reasoning string,
 ) (T, error) {
@@ -150,7 +150,7 @@ func generateJSON[T any](
 		return zero, err
 	}
 	request := llm.Request{
-		Stage: stage, Instructions: instructions, Input: input,
+		Stage: stage, Role: role, Instructions: instructions, Input: input,
 		SchemaName: schemaName, Schema: schema,
 		MaxOutputTokens: maxTokens, ReasoningEffort: reasoning,
 	}
@@ -234,7 +234,7 @@ func chapterNumberFromStage(stage string) int {
 func generateText(
 	ctx context.Context,
 	engine *Engine,
-	stage, templateName, input string,
+	stage, role, templateName, input string,
 	maxTokens int,
 	temperature float64,
 ) (string, error) {
@@ -247,7 +247,7 @@ func generateText(
 
 	// 复用统一预算/重试/用量链路生成正文。
 	result, err := engine.generate(ctx, llm.Request{
-		Stage: stage, Instructions: instructions, Input: input,
+		Stage: stage, Role: role, Instructions: instructions, Input: input,
 		MaxOutputTokens: maxTokens, ReasoningEffort: "none", Temperature: &temperature,
 	}, true)
 	if err != nil {

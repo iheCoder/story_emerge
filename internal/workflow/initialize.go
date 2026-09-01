@@ -93,7 +93,7 @@ func (engine *Engine) generateGenesis(ctx context.Context, project story.Project
 }
 
 func architectRequest(stage, instructions, input string, schema map[string]any) llm.Request {
-	return llm.Request{Stage: stage, Instructions: instructions, Input: input,
+	return llm.Request{Stage: stage, Role: llm.RoleArchitect, Instructions: instructions, Input: input,
 		SchemaName: "novel_genesis", Schema: schema, MaxOutputTokens: architectMaxOutputTokens, ReasoningEffort: "low"}
 }
 

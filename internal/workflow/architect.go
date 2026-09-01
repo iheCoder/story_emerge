@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 
+	"story_emerge/internal/llm"
 	"story_emerge/internal/story"
 )
 
@@ -29,7 +30,7 @@ func (engine *Engine) replanOutline(ctx context.Context, bible story.StoryBible,
 		return story.StoryOutline{}, err
 	}
 
-	next, err := generateJSON[story.StoryOutline](ctx, engine, chapterStage(work.context.NextChapter, "architect_replan"), "architect_replan", "story_outline", input, replanMaxOutputTokens, "low")
+	next, err := generateJSON[story.StoryOutline](ctx, engine, chapterStage(work.context.NextChapter, "architect_replan"), llm.RoleArchitect, "architect_replan", "story_outline", input, replanMaxOutputTokens, "low")
 	if err != nil {
 		return story.StoryOutline{}, err
 	}

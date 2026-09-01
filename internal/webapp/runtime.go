@@ -30,16 +30,16 @@ type Runtime interface {
 
 // WorkflowRuntime 使用现有 Engine 实现 Web 产品的三章试读与续写契约。
 type WorkflowRuntime struct {
-	config llm.Config
+	client *llm.RoleClient
 }
 
-// NewWorkflowRuntime 在服务器启动时验证模型配置，避免用户提交灵感后才发现缺少密钥。
-func NewWorkflowRuntime(provider, model string) (*WorkflowRuntime, error) {
-	config, err := llm.ConfigFromEnv(provider, model)
+// NewWorkflowRuntime 在服务器启动时验证全部角色模型配置，避免用户提交灵感后才发现配置错误。
+func NewWorkflowRuntime(roleConfigs map[string]llm.Config) (*WorkflowRuntime, error) {
+	client, err := llm.NewRoleClient(roleConfigs)
 	if err != nil {
 		return nil, err
 	}
-	return &WorkflowRuntime{config: config}, nil
+	return &WorkflowRuntime{client: client}, nil
 }
 
 // CreatePreview 初始化故事，再严格限制本次运行只提交前三章。
@@ -83,8 +83,8 @@ func (runtime *WorkflowRuntime) Continue(
 func (runtime *WorkflowRuntime) newProject(root string, request CreateRequest) story.Project {
 	return story.Project{
 		Name: filepath.Base(root), Idea: request.Idea,
-		LengthProfile: request.Length, Provider: runtime.config.Provider, Model: runtime.config.Model,
-		MaxCalls: callBudget(request.Length), CreatedAt: time.Now().UTC(),
+		LengthProfile: request.Length,
+		MaxCalls:      callBudget(request.Length), CreatedAt: time.Now().UTC(),
 	}
 }
 
@@ -94,11 +94,7 @@ func (runtime *WorkflowRuntime) newEngine(
 	maxCalls int,
 	reporter workflow.Reporter,
 ) (*workflow.Engine, error) {
-	client, err := llm.NewClient(runtime.config)
-	if err != nil {
-		return nil, err
-	}
-	return workflow.New(client, files, maxCalls, reporter)
+	return workflow.New(runtime.client, files, maxCalls, reporter)
 }
 
 // callBudget 按可能的完整故事规模提供有界预算，仍由 Engine 对每次逻辑调用统一记账。

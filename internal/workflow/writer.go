@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"story_emerge/internal/llm"
 )
 
 const (
@@ -26,7 +28,7 @@ func (engine *Engine) writeDraft(ctx context.Context, chapterContext writerConte
 	}
 
 	chapter, err := generateText(
-		ctx, engine, chapterStage(chapterContext.NextChapter, "write"), "writer", input,
+		ctx, engine, chapterStage(chapterContext.NextChapter, "write"), llm.RoleWriter, "writer", input,
 		chapterMaxOutputTokens, writerTemperature,
 	)
 	return normalizeChapterHeading(chapter), err
@@ -43,7 +45,7 @@ func (engine *Engine) reviseDraft(ctx context.Context, work chapterWork, guidanc
 
 	stage := chapterStage(work.context.NextChapter, fmt.Sprintf("revise_%d", work.reviewLog.Interventions))
 	chapter, err := generateText(
-		ctx, engine, stage, "writer_revision", input,
+		ctx, engine, stage, llm.RoleWriter, "writer_revision", input,
 		chapterMaxOutputTokens, revisionTemperature,
 	)
 	return normalizeChapterHeading(chapter), err
@@ -59,7 +61,7 @@ func (engine *Engine) rewriteAfterReplan(ctx context.Context, work chapterWork, 
 
 	stage := chapterStage(work.context.NextChapter, fmt.Sprintf("rewrite_after_replan_%d", work.reviewLog.Interventions))
 	chapter, err := generateText(
-		ctx, engine, stage, "writer_revision", input,
+		ctx, engine, stage, llm.RoleWriter, "writer_revision", input,
 		chapterMaxOutputTokens, writerTemperature,
 	)
 	return normalizeChapterHeading(chapter), err

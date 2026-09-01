@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 
+	"story_emerge/internal/llm"
 	"story_emerge/internal/story"
 )
 
@@ -35,7 +36,7 @@ func (engine *Engine) observeReader(ctx context.Context, target story.TargetRead
 		return story.ReaderObservation{}, err
 	}
 
-	observation, err := generateJSON[story.ReaderObservation](ctx, engine, chapterStage(number, "reader"), "reader", "reader_observation", input, readerMaxOutputTokens, "none")
+	observation, err := generateJSON[story.ReaderObservation](ctx, engine, chapterStage(number, "reader"), llm.RoleReader, "reader", "reader_observation", input, readerMaxOutputTokens, "none")
 	if err != nil {
 		return story.ReaderObservation{}, err
 	}
