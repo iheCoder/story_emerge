@@ -113,7 +113,8 @@ async function createStory(event) {
 
 function creationRequest() {
   return {
-    idea: elements.idea.value.trim(),
+    // 原始创作授权完整传递；是否为空由服务端校验，不改写用户文本。
+    idea: elements.idea.value,
     length: new FormData(elements.form).get("length"),
   };
 }

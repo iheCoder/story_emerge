@@ -3,68 +3,31 @@ package workflow
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	"story_emerge/internal/llm"
+	"strings"
 )
 
-const (
-	chapterMaxOutputTokens = 12000
-	writerTemperature      = 0.95
-	revisionTemperature    = 0.80
-)
-
-type writerRevisionInput struct {
-	Context          writerContext `json:"context"`
-	CurrentDraft     string        `json:"current_draft,omitempty"`
-	Guidance         string        `json:"editor_guidance"`
-	InterventionKind string        `json:"intervention_kind"`
-}
-
-func (engine *Engine) writeDraft(ctx context.Context, chapterContext writerContext) (string, error) {
-	input, err := asPrettyJSON(chapterContext)
+func (engine *Engine) writeDraft(ctx context.Context, input writerContext, attempt int) (string, error) {
+	text, err := asPrettyJSON(input)
 	if err != nil {
 		return "", err
 	}
-
-	chapter, err := generateText(
-		ctx, engine, chapterStage(chapterContext.NextChapter, "write"), llm.RoleWriter, "writer", input,
-		chapterMaxOutputTokens, writerTemperature,
-	)
+	chapter, err := generateText(ctx, engine, chapterStage(input.NextChapter, "write", attempt), llm.RoleWriter, "writer", text, 12000, 0.95)
 	return normalizeChapterHeading(chapter), err
 }
 
-func (engine *Engine) reviseDraft(ctx context.Context, work chapterWork, guidance string) (string, error) {
-	input, err := asPrettyJSON(writerRevisionInput{
-		Context: work.context, CurrentDraft: work.chapter,
-		Guidance: guidance, InterventionKind: "revise",
-	})
+// 修订只携带相同的 Writer 白名单、当前草稿与阻断问题，不泄露 Editor 的完整输入。
+func (engine *Engine) reviseDraft(ctx context.Context, input writerContext, chapter string, issues []string, attempt, revision int) (string, error) {
+	text, err := asPrettyJSON(struct {
+		Context        writerContext `json:"context"`
+		CurrentDraft   string        `json:"current_draft"`
+		BlockingIssues []string      `json:"blocking_issues"`
+	}{input, chapter, issues})
 	if err != nil {
 		return "", err
 	}
-
-	stage := chapterStage(work.context.NextChapter, fmt.Sprintf("revise_%d", work.reviewLog.Interventions))
-	chapter, err := generateText(
-		ctx, engine, stage, llm.RoleWriter, "writer_revision", input,
-		chapterMaxOutputTokens, revisionTemperature,
-	)
-	return normalizeChapterHeading(chapter), err
-}
-
-func (engine *Engine) rewriteAfterReplan(ctx context.Context, work chapterWork, guidance string) (string, error) {
-	input, err := asPrettyJSON(writerRevisionInput{
-		Context: work.context, Guidance: guidance, InterventionKind: "replan",
-	})
-	if err != nil {
-		return "", err
-	}
-
-	stage := chapterStage(work.context.NextChapter, fmt.Sprintf("rewrite_after_replan_%d", work.reviewLog.Interventions))
-	chapter, err := generateText(
-		ctx, engine, stage, llm.RoleWriter, "writer_revision", input,
-		chapterMaxOutputTokens, writerTemperature,
-	)
-	return normalizeChapterHeading(chapter), err
+	result, err := generateText(ctx, engine, chapterStage(input.NextChapter, "revise", attempt, revision), llm.RoleWriter, "writer_revision", text, 12000, 0.80)
+	return normalizeChapterHeading(result), err
 }
 
 // normalizeChapterHeading 只归一化已经存在的中文章节 Markdown 标题。
@@ -102,9 +65,4 @@ func validateDraft(chapter string) error {
 	}
 
 	return nil
-}
-
-func (engine *Engine) saveDraft(number, draftNumber int, chapter string) error {
-	name := fmt.Sprintf("draft-%d.md", draftNumber)
-	return engine.store.SaveWorking(number, name, chapter)
 }

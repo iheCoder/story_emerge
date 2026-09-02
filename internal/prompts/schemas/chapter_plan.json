@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "direction_action": {
+      "type": "string",
+      "enum": [
+        "KEEP",
+        "UPDATE"
+      ]
+    },
+    "current_direction": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "focus": {
+              "type": "string"
+            },
+            "desired_shift": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "focus",
+            "desired_shift"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "chapter_intent": {
+      "type": "object",
+      "properties": {
+        "intended_effect": {
+          "type": "string"
+        },
+        "why_now": {
+          "type": "string"
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "intended_effect",
+        "why_now",
+        "constraints"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "direction_action",
+    "current_direction",
+    "chapter_intent"
+  ],
+  "additionalProperties": false
+}

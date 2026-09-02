@@ -1,72 +1,56 @@
 # story-emerge
 
-story-emerge 是一个可恢复的长篇中文网络小说 Agent。它不把文学创作编译成 scene 清单，也不追求建立完整小说事实数据库；系统优先让故事持续好看，同时守住作品身份、主要方向和真正重要的长期状态。
+面向约 8～10 万字中篇的中文小说生成系统。通过明确的章节意图、正文验收和当前事实，持续从已有故事中产生后续。
 
-    初始化：Architect → Story Bible + Story Spine + Target Reader + Outline
-    每章：Writer → 基础校验 → Editor → Story Update → Reader → 原子提交
-                         accept / revise / replan
-                         每章最多两次文学干预
+    初始化：Story Architect → Story Core + Initial Story State + Current Direction
+    每章：Chapter Planner → Writer → Editor → Commit → 原子提交
+                                  ↓           ↓
+                            退回 Writer    提取当前事实、轨迹、摘要
+                            或 Planner
 
-长期模型角色只有 Architect、Writer、Editor 和 Reader。重规划是 Architect 的按需模式；Reader 只观察，不控制工作流。
+Planner 决定值得产生的叙事效果，Writer 自由创造实现路径，Editor 决定正文准入与完结，Commit 只提取已接受正文。没有 Reader、固定 Outline、Live Tension 或自动接受兜底。
 
-## 快速开始
+## 启动
 
-需要 Go 1.24 或更高版本。
+`go.mod` 声明 Go 1.27。配置五个模型职责后启动：
 
     cp config.example.yaml config.yaml
-    # 编辑 config.yaml，填写各供应商密钥和 Architect/Writer/Editor/Reader 模型
+    # 填写供应商密钥以及 architect / planner / writer / editor / commit 的模型
     go run ./cmd/story-emerge
 
-然后打开浏览器，在页面中填写故事灵感并选择篇幅。Web 服务会自动为每个故事生成项目目录。
+浏览器打开 `http://127.0.0.1:8787`，填写故事想法和篇幅。原始输入完整保存；Writer 不读取 User Idea。
 
-命令行只保留项目维护操作。例如最多继续三章；传 0 则写到故事状态自然完成：
-
-    go run ./cmd/story-emerge run \
-      --project novels/machine-last-ten-seconds \
-      --config config.yaml \
-      --chapters 3
-
-`length` 可取 `short`、`medium`、`long`、`epic`。它只表示全书规模，不会变成固定章数、单章字数或 scene 配额。
-
-## Web
+Web 提供最多三章试读，已提交章节立即可读；之后可以续写下一章或持续生成到正式完结。短篇提前完成时按实际结果显示。
 
     go run ./cmd/story-emerge serve --config config.yaml --addr 127.0.0.1:8787
+    go run ./cmd/story-emerge run --project novels/demo --chapters 3
+    go run ./cmd/story-emerge status --project novels/demo
+    go run ./cmd/story-emerge export --project novels/demo
 
-直接运行和显式执行 `serve` 的效果相同；后者适合需要调整监听地址或数据目录时使用。
+`--chapters 0` 表示持续写到 Editor 确认完结，仍受项目模型调用预算约束。篇幅档位只提供全书软目标，不限制章节数或单章字数。用户明确指定的篇幅优先；8～10 万字以外的质量不属于本轮验证结论。
 
-Web 创建后生成三章试读。每一章推进 HEAD 后立即可读；此后可以生成下一章，或让 Agent 持续写到 `story_status=completed`。
+## 数据与模型配置
 
-## 模型配置
-
-应用级模型配置位于 `config.yaml`，示例见 [config.example.yaml](config.example.yaml)。
-`providers` 配置 API Key 和端点，`roles` 为每个长期工作流角色单独绑定供应商与模型。
-修改配置后，命令行下一次运行会使用新的角色模型；Web 服务需要重启后读取新配置。模型配置不会写入项目目录。
-
-真实的 `config.yaml` 已加入 `.gitignore`，请不要把包含密钥的配置提交到仓库。
-
-## 项目文件
+`config.yaml` 中的 providers 保存连接信息，roles 分别选择模型；配置不进入小说目录。真实配置已被 `.gitignore` 排除。配置改变后重启 Web，CLI 下一次运行会重新读取。
 
     novels/<name>/
-    ├── brief.md                 原始点子
-    ├── story.json / story.md    Story Bible、Story Spine 与目标读者
-    ├── project.json             作品身份、规模意图与调用预算
-    ├── HEAD                     当前完整提交
-    ├── outlines/                Current Arc 与 Story Tracks 的版本
-    ├── chapters/                最终正文
-    ├── story-updates/           每章长期状态变化
-    ├── summaries/               独立的读者可见短期记忆
-    ├── editor-reviews/          Editor 的有限干预轨迹
-    ├── reader-observations/     每章独立读者观察
-    ├── checkpoints/             精简 Story State 快照
-    ├── .work/                   草稿与中断现场
-    └── usage.jsonl              调用与 token 审计
+    ├── project.json         原始 User Idea、书名、篇幅档位、调用预算
+    ├── story-core.json      一次性作品核心
+    ├── HEAD                 最新完整提交的章节号
+    ├── chapters/            已接受正文
+    ├── commits/             最终计划、Editor 判断、事实补丁、轨迹和短摘要
+    ├── checkpoints/         当前事实、方向、最近五章轨迹、字符数、完结标记
+    ├── .work/               规划尝试、草稿、审核和失败输出
+    └── usage.jsonl          模型用量记录
 
-正文、Story Update、摘要、Editor 轨迹、Reader Observation、检查点和可选新 Outline 全部写好后才原子替换 HEAD。
+Chapter Ledger 从 HEAD 范围内的 commits 派生。正文、提交记录和检查点全部写完后才替换 HEAD。失败留下的孤儿文件不会进入书架、上下文或书稿导出。
 
-## 验证
+## 验证与设计
 
-    GOTOOLCHAIN=local GOCACHE=/tmp/story-emerge-go-cache go test ./...
-    GOTOOLCHAIN=local GOCACHE=/tmp/story-emerge-go-cache go test -race ./...
-    GOTOOLCHAIN=local GOCACHE=/tmp/story-emerge-go-cache go vet ./...
+    GOCACHE=/tmp/story-emerge-go-cache go test ./...
+    GOCACHE=/tmp/story-emerge-go-cache go test -race ./...
+    GOCACHE=/tmp/story-emerge-go-cache go vet ./...
 
-设计取舍见 [docs/design.md](docs/design.md)。
+行为测试覆盖角色输入边界、修订回退、空事实补丁、状态替换删除、轨迹窗口、提交失败恢复及完结停止。这些测试使用脚本化模型，不证明生成小说的文学质量。
+
+设计与边界见 [docs/design.md](docs/design.md)，故障处理见 [恢复手册](project_cognition/runbooks/model-output-failure-recovery.md)。

@@ -3,9 +3,11 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -23,7 +25,7 @@ type Event struct {
 // Reporter 允许入口层订阅进度；Engine 在无 reporter 时仍可无界面运行。
 type Reporter func(Event)
 
-// Engine 串联“上下文 -> Writer -> Editor -> Story Update -> Reader -> 提交”的状态机。
+// Engine 串联 Planner -> Writer -> Editor -> Commit 的章节循环。
 // usedCalls 从 usage.jsonl 恢复，maxCalls 在整个项目生命周期内生效而非仅限当前进程。
 type Engine struct {
 	generator llm.Generator
@@ -37,6 +39,9 @@ func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Rep
 	// 构造时恢复历史调用计数，使重启不会重置预算；文件统计失败则拒绝启动，
 	// 因为在未知成本下继续生成可能超出用户设定。
 	// 恢复已有成功调用数，保证重启不重置项目预算。
+	if maxCalls < 1 {
+		return nil, fmt.Errorf("模型调用预算必须大于 0")
+	}
 	usedCalls, err := files.CountUsage()
 	if err != nil {
 		return nil, fmt.Errorf("统计既有模型调用失败: %w", err)
@@ -58,11 +63,14 @@ func (engine *Engine) emit(stage, message string) {
 }
 
 // generate 统一执行预算检查、调用和用量落盘，避免某个新增阶段绕过成本控制。
-func (engine *Engine) generate(ctx context.Context, request llm.Request, record bool) (llm.Result, error) {
+func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Result, error) {
 	// 预算检查发生在调用前；计数在发起请求前递增，保守地把失败尝试也视为已占用的逻辑槽位，
 	// 防止瞬时故障下的重试/重启绕过成本护栏。成功结果才由 store 记入 usage.jsonl。
 	// 在发起请求前检查并占用一个逻辑调用槽位。
-	if engine.maxCalls > 0 && engine.usedCalls >= engine.maxCalls {
+	if err := ctx.Err(); err != nil {
+		return llm.Result{}, err
+	}
+	if engine.usedCalls >= engine.maxCalls {
 		return llm.Result{}, fmt.Errorf("已达到模型调用上限 %d", engine.maxCalls)
 	}
 	engine.usedCalls++
@@ -74,11 +82,9 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request, record 
 		return llm.Result{}, fmt.Errorf("%s: %w", request.Stage, err)
 	}
 
-	// 按调用方要求记录成功结果的用量。
-	if record {
-		if err := engine.store.AppendUsage(request.Stage, result); err != nil {
-			return llm.Result{}, err
-		}
+	// 初始化和逐章阶段都在已准备的项目目录中运行，成功用量统一立即落盘。
+	if err := engine.store.AppendUsage(request.Stage, result); err != nil {
+		return llm.Result{}, err
 	}
 	return result, nil
 }
@@ -108,17 +114,19 @@ func loadPromptAndSchema(templateName, schemaName string) (string, map[string]an
 // decodeStructured 清理可选代码围栏并把模型文本解码为目标领域类型。
 func decodeStructured[T any](text string) (T, error) {
 	// 模型偶尔会包裹 Markdown 代码围栏；这里只做可解释的外层清理，
-	// 不尝试猜测或修补业务字段，字段修复交给一次独立的 format_repair 调用。
+	// 不尝试猜测或补写业务字段；仅语法与类型问题允许一次独立的格式修复。
 	// 去除模型可能添加的 Markdown 代码围栏。
 	var target T
-	cleaned := strings.TrimSpace(text)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
+	cleaned := cleanJSON(text)
 
 	// 严格解码为目标类型，不对业务字段进行猜测修补。
-	if err := json.Unmarshal([]byte(strings.TrimSpace(cleaned)), &target); err != nil {
+	decoder := json.NewDecoder(bytes.NewBufferString(strings.TrimSpace(cleaned)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&target); err != nil {
 		return target, fmt.Errorf("模型结构化输出不是有效 JSON: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return target, fmt.Errorf("结构化输出包含多余内容")
 	}
 	return target, nil
 }
@@ -156,12 +164,19 @@ func generateJSON[T any](
 	}
 
 	// 执行正常结构化生成并尝试解码。
-	result, err := engine.generate(ctx, request, true)
+	result, err := engine.generate(ctx, request)
 	if err != nil {
 		return zero, err
 	}
 	decoded, decodeErr := decodeStructured[T](result.Text)
 	if decodeErr == nil {
+		// 语法已合法但必要字段缺失时直接失败，不能让格式修复替提取器创造事实。
+		if err := validateOutputShape(result.Text, schema); err != nil {
+			if saveErr := engine.saveMalformedOutput(stage, result.Text); saveErr != nil {
+				return zero, saveErr
+			}
+			return zero, fmt.Errorf("%s 输出结构无效: %w", stage, err)
+		}
 		return decoded, nil
 	}
 
@@ -171,6 +186,11 @@ func generateJSON[T any](
 		return zero, err
 	}
 
+	// 完整的自然语言评论不是待修复的 JSON，不能借格式修复重新编造业务结果。
+	cleaned := cleanJSON(result.Text)
+	if !strings.HasPrefix(cleaned, "{") {
+		return zero, decodeErr
+	}
 	return repairStructuredJSON[T](ctx, engine, request, result.Text, decodeErr)
 }
 
@@ -183,7 +203,7 @@ func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request ll
 	request = jsonRepairRequest(request, malformed, decodeErr)
 
 	// 执行一次格式修复并再次严格解码；失败即终止该阶段。
-	repaired, err := engine.generate(ctx, request, true)
+	repaired, err := engine.generate(ctx, request)
 	if err != nil {
 		return zero, err
 	}
@@ -192,12 +212,18 @@ func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request ll
 		_ = engine.saveMalformedOutput(request.Stage, repaired.Text)
 		return zero, decodeErr
 	}
+	if err := validateOutputShape(repaired.Text, request.Schema); err != nil {
+		if saveErr := engine.saveMalformedOutput(request.Stage, repaired.Text); saveErr != nil {
+			return zero, saveErr
+		}
+		return zero, err
+	}
 	return decoded, nil
 }
 
 func jsonRepairRequest(request llm.Request, malformed string, decodeErr error) llm.Request {
 	request.Stage += "_format_repair"
-	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法、字段缺失和字段类型，使输出严格符合随请求提供的 Schema。只返回 JSON。"
+	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法和字段类型；不得补写原答案没有的业务信息，使输出严格符合随请求提供的 Schema。只返回 JSON。"
 	request.Input = "解析错误：\n" + decodeErr.Error() + "\n\n修复下面的 JSON：\n\n" + malformed
 	request.ReasoningEffort = "none"
 
@@ -208,7 +234,7 @@ func jsonRepairRequest(request llm.Request, malformed string, decodeErr error) l
 func (engine *Engine) saveMalformedOutput(stage, output string) error {
 	// 结构化失败原文进入 .work 而不是覆盖正式产物，既可诊断又不会污染可恢复状态。
 	// 通知当前阶段发生格式失败，便于 CLI 解释为什么出现额外调用。
-	engine.emit(stage, "结构化输出无效，保存原文并重试一次")
+	engine.emit(stage, "结构化输出无效，保存原文以便诊断")
 
 	// 保存原文作为修复前证据；即使修复再次失败也能人工定位供应商返回。
 	return engine.store.SaveWorking(chapterNumberFromStage(stage), stage+"-malformed.txt", output)
@@ -249,7 +275,7 @@ func generateText(
 	result, err := engine.generate(ctx, llm.Request{
 		Stage: stage, Role: role, Instructions: instructions, Input: input,
 		MaxOutputTokens: maxTokens, ReasoningEffort: "none", Temperature: &temperature,
-	}, true)
+	})
 	if err != nil {
 		return "", err
 	}

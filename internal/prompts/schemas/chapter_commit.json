@@ -1,0 +1,174 @@
+{
+  "type": "object",
+  "properties": {
+    "state_patch": {
+      "type": "object",
+      "properties": {
+        "world": {
+          "type": "object",
+          "properties": {
+            "upsert": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "description"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "upsert",
+            "remove"
+          ],
+          "additionalProperties": false
+        },
+        "characters": {
+          "type": "object",
+          "properties": {
+            "upsert": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "facts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "knowledge_and_beliefs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "commitments_and_intentions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "facts",
+                  "knowledge_and_beliefs",
+                  "commitments_and_intentions"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "upsert",
+            "remove"
+          ],
+          "additionalProperties": false
+        },
+        "relationships": {
+          "type": "object",
+          "properties": {
+            "upsert": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "characters": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "characters",
+                  "description"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "upsert",
+            "remove"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "world",
+        "characters",
+        "relationships"
+      ],
+      "additionalProperties": false
+    },
+    "trajectory_entry": {
+      "type": "object",
+      "properties": {
+        "story_move": {
+          "type": "string"
+        },
+        "narrative_shape": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "story_move",
+        "narrative_shape"
+      ],
+      "additionalProperties": false
+    },
+    "chapter_summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "state_patch",
+    "trajectory_entry",
+    "chapter_summary"
+  ],
+  "additionalProperties": false
+}

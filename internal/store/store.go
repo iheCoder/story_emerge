@@ -1,5 +1,4 @@
-// Package store 负责小说项目的文件持久化。
-// 提交协议的核心是：先写不可变产物，最后原子替换 HEAD；读取者永远只相信 HEAD。
+// Package store 使用 HEAD 作为唯一提交边界。正文、提取记录和检查点写全后才推进 HEAD。
 package store
 
 import (
@@ -16,16 +15,7 @@ import (
 	"story_emerge/internal/story"
 )
 
-const maximumEditorInterventions = 2
-
-// Store 是一个以项目根目录为边界的文件仓库。
-// 它不缓存故事状态：每次读取都回到磁盘，故障恢复时不会依赖旧进程的内存快照。
-type Store struct {
-	root string
-}
-
-// UsageRecord 记录一次成功的模型调用及其成本/耗时。
-// 失败请求不在这里记账，避免把“尝试次数”和供应商实际返回的成功结果混为一谈。
+type Store struct{ root string }
 type UsageRecord struct {
 	At           time.Time `json:"at"`
 	Stage        string    `json:"stage"`
@@ -38,165 +28,170 @@ type UsageRecord struct {
 	DurationMS   int64     `json:"duration_ms"`
 }
 
-// New 创建绑定到 root 的文件仓库，不会隐式创建或清空目录。
-func New(root string) *Store {
-	// Clean 只做路径规范化，不创建目录；目录创建由 Create 控制，
-	// 这样 status/run 读取不存在的项目时能明确返回“项目不存在”。
-	return &Store{root: filepath.Clean(root)}
-}
+func New(root string) *Store      { return &Store{root: filepath.Clean(root)} }
+func (store *Store) Root() string { return store.root }
 
-// Root 返回仓库绑定的规范化根目录。
-func (store *Store) Root() string {
-	// Root 用于 CLI 或测试展示实际操作的项目目录，调用者不能借此绕过 Store 的路径拼接。
-	return store.root
-}
-
-// Create 初始化完整目录，最后才写 HEAD，因此失败的初始化不会伪装成可运行项目。
-func (store *Store) Create(project story.Project, genesis story.Genesis) error {
-	// 初始化按“目录 -> 不可变输入 -> 000 检查点 -> 人类视图 -> HEAD”顺序执行。
-	// HEAD 是项目可见性的提交标记，必须最后写，避免半初始化目录被误判为可继续项目。
-	// 阶段一：确认目标目录可以安全初始化，拒绝覆盖任何已有项目。
-	if err := store.ensureNewRoot(); err != nil {
+// Prepare 在调用模型前拒绝覆盖已有项目，并原样保存 User Idea。
+// 此时没有 HEAD；初始化中断的目录只提供诊断证据，不会被书架当成正式故事。
+func (store *Store) Prepare(project story.Project) error {
+	if err := story.ValidateProject(project); err != nil {
 		return err
 	}
-
-	// 阶段二：一次创建所有固定产物目录，后续写入不再隐式扩展布局。
-	if err := store.createDirectories(); err != nil {
+	entries, err := os.ReadDir(store.root)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-
-	// 阶段三：写入项目配置、Bible 和第 0 章检查点。
-	// 这些 JSON 是后续恢复所需的机器事实，必须先于任何可见提交指针存在。
-	state := story.NewInitialState(genesis.InitialState, genesis.Outline)
-
-	files := []struct {
-		path string
-		data any
-	}{
-		{"project.json", project}, {"story.json", genesis.Bible},
-		{outlinePath(0), genesis.Outline},
-		{checkpointPath(0), state},
+	if len(entries) != 0 {
+		return fmt.Errorf("输出目录已存在且非空: %s", store.root)
 	}
-	for _, file := range files {
-		if err := store.writeJSON(file.path, file.data); err != nil {
+	for _, dir := range []string{"chapters", "commits", "checkpoints", ".work"} {
+		if err := os.MkdirAll(store.path(dir), 0755); err != nil {
 			return err
 		}
 	}
+	return store.writeJSON("project.json", project)
+}
 
-	// 阶段四：写入原始点子和人读视图，方便用户检查 Architect 的一次性交付。
-	if err := store.writeText("brief.md", "# 原始创作点子\n\n"+project.Idea+"\n"); err != nil {
+// CommitGenesis 仅提交一次作品核心与第 0 章初态；后续章节没有改写 Core 的入口。
+func (store *Store) CommitGenesis(genesis story.Genesis) error {
+	if _, err := os.Stat(store.path("HEAD")); err == nil {
+		return fmt.Errorf("项目已经初始化")
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := store.writeHumanViews(genesis.Bible, state); err != nil {
+	if err := story.ValidateGenesis(genesis); err != nil {
 		return err
 	}
-
-	// 阶段五：最后写入 HEAD，正式宣布项目初始化完成。
+	project, err := store.LoadProject()
+	if err != nil {
+		return err
+	}
+	project.Title = genesis.Title
+	if err := store.writeJSON("project.json", project); err != nil {
+		return err
+	}
+	if err := store.writeJSON("story-core.json", genesis.StoryCore); err != nil {
+		return err
+	}
+	if err := store.writeJSON(checkpointPath(0), story.NewInitialState(genesis)); err != nil {
+		return err
+	}
 	return store.writeText("HEAD", "000\n")
 }
-
-// LoadProject 读取项目的作品身份和运行预算。
 func (store *Store) LoadProject() (story.Project, error) {
-	// project.json 保存故事自身的持久化元数据；模型连接配置由应用级 config.yaml 提供。
 	var project story.Project
-	err := store.readJSON("project.json", &project)
-	return project, err
-}
-
-// LoadBible 读取全书静态故事圣经。
-func (store *Store) LoadBible() (story.StoryBible, error) {
-	// Bible 是跨章节的世界观/人物/主线约束，读取失败时不能继续生成正文。
-	var bible story.StoryBible
-	err := store.readJSON("story.json", &bible)
-	return bible, err
-}
-
-// LoadState 根据 HEAD 选择并读取当前提交检查点。
-func (store *Store) LoadState() (story.State, error) {
-	// 先读 HEAD 再读对应 checkpoint，形成“提交指针 -> 不可变快照”的两段式恢复。
-	// HEAD 必须是非负整数；任何手工损坏都应立即报错而不是猜测最近文件。
-	// 读取 HEAD 提交指针。
-	head, err := os.ReadFile(store.path("HEAD"))
-	if err != nil {
-		return story.State{}, fmt.Errorf("读取 HEAD 失败: %w", err)
+	if err := store.readJSON("project.json", &project); err != nil {
+		return project, err
 	}
-
-	// 严格解析并校验章节编号，不猜测损坏指针的替代值。
-	number, err := strconv.Atoi(strings.TrimSpace(string(head)))
-	if err != nil || number < 0 {
-		return story.State{}, fmt.Errorf("HEAD 内容无效: %q", strings.TrimSpace(string(head)))
-	}
-
-	// 读取指针指向的不可变状态快照。
-	var state story.State
-	err = store.readJSON(checkpointPath(number), &state)
-	return state, err
+	return project, story.ValidateProject(project)
 }
-
-// LoadLatestReaderObservation 读取 HEAD 章节对应的独立读者观察。
-// 第 0 章尚无正文，因此返回 nil；正章节缺失观察则表示提交损坏。
-func (store *Store) LoadLatestReaderObservation() (*story.ReaderObservation, error) {
-	number, err := store.loadHEAD()
-	if err != nil {
-		return nil, err
+func (store *Store) LoadCore() (story.StoryCore, error) {
+	var core story.StoryCore
+	if err := store.readJSON("story-core.json", &core); err != nil {
+		return core, err
 	}
-	if number == 0 {
-		return nil, nil
-	}
-
-	var observation story.ReaderObservation
-	if err := store.readJSON(readerObservationPath(number), &observation); err != nil {
-		return nil, err
-	}
-
-	return &observation, nil
+	return core, story.ValidateCore(core)
 }
-
-// LoadOutline reads the immutable outline version referenced by State.
-func (store *Store) LoadOutline(version int) (story.StoryOutline, error) {
-	var outline story.StoryOutline
-	err := store.readJSON(outlinePath(version), &outline)
-	return outline, err
-}
-
 func (store *Store) loadHEAD() (int, error) {
-	head, err := os.ReadFile(store.path("HEAD"))
+	data, err := os.ReadFile(store.path("HEAD"))
 	if err != nil {
 		return 0, fmt.Errorf("读取 HEAD 失败: %w", err)
 	}
-	number, err := strconv.Atoi(strings.TrimSpace(string(head)))
+	number, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || number < 0 {
-		return 0, fmt.Errorf("HEAD 内容无效: %q", strings.TrimSpace(string(head)))
+		return 0, fmt.Errorf("HEAD 内容无效")
 	}
 	return number, nil
 }
+func (store *Store) LoadState() (story.State, error) {
+	number, err := store.loadHEAD()
+	if err != nil {
+		return story.State{}, err
+	}
+	var state story.State
+	if err := store.readJSON(checkpointPath(number), &state); err != nil {
+		return state, err
+	}
+	if state.Chapter != number {
+		return state, fmt.Errorf("检查点章节与 HEAD 不一致")
+	}
+	return state, story.ValidateState(state)
+}
 
-// LoadChapter 读取已提交章节；不存在的正章节号表示尚未提交。
+// LoadChapter 严格限制在已提交历史内，磁盘上的孤儿正文不能越过 HEAD 被读取。
 func (store *Store) LoadChapter(number int) (string, error) {
-	// 章节文件缺失被视为“尚未提交”，而其他 IO 错误继续暴露，避免静默吞掉磁盘故障。
-
-	// 处理第 0 章或负数请求，它们没有可读取正文。
-	if number < 1 {
+	if number == 0 {
 		return "", nil
 	}
-
-	// 读取已提交章节，并区分“尚未存在”和真实 IO 故障。
-	content, err := os.ReadFile(store.path(chapterPath(number)))
-	if os.IsNotExist(err) {
-		return "", nil
+	head, err := store.loadHEAD()
+	if err != nil {
+		return "", err
 	}
+	if number < 1 || number > head {
+		return "", fmt.Errorf("第 %d 章尚未提交", number)
+	}
+	data, err := os.ReadFile(store.path(chapterPath(number)))
 	if err != nil {
 		return "", fmt.Errorf("读取第 %d 章失败: %w", number, err)
 	}
-	return string(content), nil
+	return string(data), nil
 }
 
-// ExportManuscript 按 HEAD 指向的已提交历史合并完整书稿。
-// `.work` 中未通过的草稿不会进入导出文件。
+// LoadLedger 直接投影正式提交记录，不再维护另一份可能与 HEAD 不一致的全局摘要文件。
+func (store *Store) LoadLedger() ([]story.LedgerEntry, error) {
+	head, err := store.loadHEAD()
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]story.LedgerEntry, 0, head)
+	for number := 1; number <= head; number++ {
+		var commit story.ChapterCommit
+		if err := store.readJSON(commitPath(number), &commit); err != nil {
+			return nil, err
+		}
+		if commit.Chapter != number || commit.Review.Action != story.EditorAccept {
+			return nil, fmt.Errorf("第 %d 章提交记录无效", number)
+		}
+		entries = append(entries, story.LedgerEntry{Chapter: number, Title: commit.Title, Summary: commit.Result.ChapterSummary})
+	}
+	return entries, nil
+}
+
+// CommitChapter 自行从 HEAD 计算下一份状态，调用者不能传入一个与补丁不一致的快照。
+// 任一文件写入失败时旧 HEAD 保持不变，下次可以从旧检查点重新生成这一章。
+func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (story.State, error) {
+	current, err := store.LoadState()
+	if err != nil {
+		return story.State{}, err
+	}
+	next, err := story.ApplyChapter(current, chapter, commit)
+	if err != nil {
+		return story.State{}, err
+	}
+	if err := store.writeText(chapterPath(next.Chapter), chapter); err != nil {
+		return story.State{}, err
+	}
+	if err := store.writeJSON(commitPath(next.Chapter), commit); err != nil {
+		return story.State{}, err
+	}
+	if err := store.writeJSON(checkpointPath(next.Chapter), next); err != nil {
+		return story.State{}, err
+	}
+	if err := store.writeText("HEAD", fmt.Sprintf("%03d\n", next.Chapter)); err != nil {
+		return story.State{}, err
+	}
+	return next, nil
+}
+
+func (store *Store) SaveWorking(number int, name string, data any) error {
+	path := filepath.Join(".work", fmt.Sprintf("%03d-%s", number, name))
+	if text, ok := data.(string); ok {
+		return store.writeText(path, text)
+	}
+	return store.writeJSON(path, data)
+}
 func (store *Store) ExportManuscript() (string, error) {
-	// 导出只投影 Bible 标题和 HEAD 之前的章节正文，故障现场 .work 与未提交产物天然被排除。
-	// 读取 Bible 和当前 HEAD 状态，确定标题与导出边界。
-	bible, err := store.LoadBible()
+	project, err := store.LoadProject()
 	if err != nil {
 		return "", err
 	}
@@ -204,132 +199,19 @@ func (store *Store) ExportManuscript() (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	// 按章节顺序拼接已提交正文；缺失章节直接暴露错误。
 	var manuscript strings.Builder
-	fmt.Fprintf(&manuscript, "# %s\n\n", bible.Title)
+	fmt.Fprintf(&manuscript, "# %s\n\n", project.Title)
 	for number := 1; number <= state.Chapter; number++ {
 		chapter, err := store.LoadChapter(number)
 		if err != nil {
 			return "", err
 		}
-		manuscript.WriteString(strings.TrimSpace(chapter))
-		manuscript.WriteString("\n\n")
+		manuscript.WriteString(strings.TrimSpace(chapter) + "\n\n")
 	}
-
-	// 以原子写入方式刷新导出文件。
 	if err := store.writeText("manuscript.md", manuscript.String()); err != nil {
 		return "", err
 	}
 	return store.path("manuscript.md"), nil
-}
-
-// SaveWorking 将中间产物保存到 .work 诊断区，不改变正式提交指针，
-// 便于定位失败原因或人工接管。
-func (store *Store) SaveWorking(number int, name string, data any) error {
-	// .work 是可诊断的临时区：保存草稿、状态与审核意见等中间结果，
-	// 但不改变 HEAD，因此人工查看或下次重跑都不会把草稿当成正式剧情。
-	// 根据章节号和产物名计算诊断文件路径。
-	path := filepath.Join(".work", fmt.Sprintf("%03d-%s", number, name))
-
-	// 字符串按 Markdown/文本保存，其余值按缩进 JSON 保存。
-	if text, ok := data.(string); ok {
-		return store.writeText(path, text)
-	}
-	return store.writeJSON(path, data)
-}
-
-// LoadSummaries 读取已提交章节的读者可见短期记忆。
-// 摘要不属于长期 Story State，因此按章节独立保存，并严格受 HEAD 边界约束。
-func (store *Store) LoadSummaries() ([]story.ChapterSummary, error) {
-	head, err := store.loadHEAD()
-	if err != nil {
-		return nil, err
-	}
-
-	summaries := make([]story.ChapterSummary, 0, head)
-	for number := 1; number <= head; number++ {
-		var summary story.ChapterSummary
-		if err := store.readJSON(summaryPath(number), &summary); err != nil {
-			return nil, err
-		}
-		summaries = append(summaries, summary)
-	}
-
-	return summaries, nil
-}
-
-// CommitChapter 把本章所有产物写好后才推进 HEAD。
-// 即使进程在最后一步前退出，旧 HEAD 仍指向完整、可读取的上一章。
-func (store *Store) CommitChapter(chapter string, update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation, state story.State, outline story.StoryOutline, replanned bool) error {
-	// 依次写正文、长期状态更新、Editor 轨迹、Reader Observation 和人类视图，最后原子替换 HEAD。
-	// 任一步失败都会保留旧 HEAD；代价是可能留下可清理的孤儿文件，但不会破坏可恢复性。
-	number := state.Chapter
-	if err := validateCommit(update, summary, review, observation, state, outline); err != nil {
-		return err
-	}
-	if err := store.writeChapterArtifacts(number, chapter, update, summary, review, observation); err != nil {
-		return err
-	}
-	if replanned {
-		if err := store.writeJSON(outlinePath(outline.Version), outline); err != nil {
-			return err
-		}
-	}
-	if err := store.writeJSON(checkpointPath(number), state); err != nil {
-		return err
-	}
-
-	// 刷新给人阅读的状态视图。
-	bible, err := store.LoadBible()
-	if err != nil {
-		return err
-	}
-	if err := store.writeHumanViews(bible, state); err != nil {
-		return err
-	}
-
-	// 所有产物成功后才原子推进 HEAD。
-	return store.writeText("HEAD", fmt.Sprintf("%03d\n", number))
-}
-
-func validateCommit(update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation, state story.State, outline story.StoryOutline) error {
-	number := state.Chapter
-	if update.Chapter != number || summary.Number != number || review.Chapter != number {
-		return fmt.Errorf("章节产物与候选检查点章节不一致: %d/%d/%d/%d", update.Chapter, summary.Number, review.Chapter, number)
-	}
-	if review.Interventions > maximumEditorInterventions {
-		return fmt.Errorf("Editor 干预次数超过上限: %d", review.Interventions)
-	}
-	if err := story.ValidateReaderObservation(observation, number); err != nil {
-		return fmt.Errorf("读者观察无效: %w", err)
-	}
-	if err := story.ValidateLiveTensions(state.LiveTensions); err != nil {
-		return fmt.Errorf("Live Tension 无效: %w", err)
-	}
-	if state.OutlineVersion != outline.Version {
-		return fmt.Errorf("大纲版本与候选检查点不一致: %d/%d", outline.Version, state.OutlineVersion)
-	}
-	return nil
-}
-
-func (store *Store) writeChapterArtifacts(number int, chapter string, update story.StoryUpdate, summary story.ChapterSummary, review story.EditorReviewLog, observation story.ReaderObservation) error {
-	if err := store.writeText(chapterPath(number), chapter); err != nil {
-		return err
-	}
-	if err := store.writeJSON(storyUpdatePath(number), update); err != nil {
-		return err
-	}
-	if err := store.writeJSON(summaryPath(number), summary); err != nil {
-		return err
-	}
-	if err := store.writeJSON(editorReviewPath(number), review); err != nil {
-		return err
-	}
-	if err := store.writeJSON(readerObservationPath(number), observation); err != nil {
-		return err
-	}
-	return nil
 }
 
 // AppendUsage 追加一条成功调用记录到 usage.jsonl。
@@ -377,51 +259,6 @@ func (store *Store) CountUsage() (int, error) {
 	return count, scanner.Err()
 }
 
-// writeHumanViews 根据机器状态刷新给人阅读的 story.md 和 status.md。
-func (store *Store) writeHumanViews(bible story.StoryBible, state story.State) error {
-	// story.md/status.md 是给人读的派生视图，真实事实仍以 JSON 检查点和 HEAD 为准。
-
-	// 刷新全书 Bible 视图。
-	if err := store.writeText("story.md", story.RenderStory(bible)); err != nil {
-		return err
-	}
-
-	// 刷新当前状态视图。
-	return store.writeText("status.md", story.RenderStatus(bible, state))
-}
-
-// ensureNewRoot 确保初始化目标是不存在或空目录。
-func (store *Store) ensureNewRoot() error {
-	// new 只接受不存在或空目录，防止误把已有项目当成新项目覆盖。
-
-	// 检查目标目录是否已经存在。
-	entries, err := os.ReadDir(store.root)
-	if os.IsNotExist(err) {
-		// 不存在时创建目录；后续 Create 会继续建立子目录和文件。
-		return os.MkdirAll(store.root, 0o755)
-	}
-	if err != nil {
-		return err
-	}
-
-	// 已有目录只能为空，拒绝覆盖任何历史项目。
-	if len(entries) > 0 {
-		return fmt.Errorf("输出目录已存在且非空: %s", store.root)
-	}
-	return nil
-}
-
-// createDirectories 建立项目产物的固定目录布局。
-func (store *Store) createDirectories() error {
-	// 目录集合对应状态机的产物类型；集中创建让后续写入无需在每个阶段重复判断目录。
-	for _, directory := range []string{"chapters", "story-updates", "summaries", "editor-reviews", "reader-observations", "outlines", "checkpoints", ".work"} {
-		if err := os.MkdirAll(store.path(directory), 0o755); err != nil {
-			return fmt.Errorf("创建目录 %s 失败: %w", directory, err)
-		}
-	}
-	return nil
-}
-
 // readJSON 统一读取并解码仓库内 JSON 文件。
 func (store *Store) readJSON(relative string, target any) error {
 	// 所有 JSON 读取统一补充相对文件名，错误信息才能直接对应项目内的损坏产物。
@@ -433,8 +270,7 @@ func (store *Store) readJSON(relative string, target any) error {
 	}
 	defer file.Close()
 
-	// 当前项目不迁移旧契约。拒绝未知字段可以让旧 Durable/Track 状态明确失败，
-	// 避免它们被标准库静默忽略后，以缺失上下文的状态继续生成新章节。
+	// 拒绝未知字段，防止损坏或不匹配的文件被解码成不完整状态后继续写作。
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -506,33 +342,6 @@ func (store *Store) path(relative string) string {
 }
 
 // chapterPath 返回章节 Markdown 的固定三位编号路径。
-func chapterPath(number int) string {
-	// 三位数字命名既保持目录字典序，也让章节编号与 HEAD/日志中的编号一致。
-	return filepath.Join("chapters", fmt.Sprintf("%03d.md", number))
-}
-
-func readerObservationPath(number int) string {
-	return filepath.Join("reader-observations", fmt.Sprintf("%03d.json", number))
-}
-
-func outlinePath(version int) string {
-	return filepath.Join("outlines", fmt.Sprintf("%03d.json", version))
-}
-
-func storyUpdatePath(number int) string {
-	return filepath.Join("story-updates", fmt.Sprintf("%03d.json", number))
-}
-
-func summaryPath(number int) string {
-	return filepath.Join("summaries", fmt.Sprintf("%03d.json", number))
-}
-
-func editorReviewPath(number int) string {
-	return filepath.Join("editor-reviews", fmt.Sprintf("%03d.json", number))
-}
-
-// checkpointPath 返回章节提交后完整状态的固定编号路径。
-func checkpointPath(number int) string {
-	// checkpoint 保存提交后的完整状态；按章节编号不可变落盘，HEAD 只负责选择当前版本。
-	return filepath.Join("checkpoints", fmt.Sprintf("%03d.json", number))
-}
+func chapterPath(number int) string    { return fmt.Sprintf("chapters/%03d.md", number) }
+func commitPath(number int) string     { return fmt.Sprintf("commits/%03d.json", number) }
+func checkpointPath(number int) string { return fmt.Sprintf("checkpoints/%03d.json", number) }

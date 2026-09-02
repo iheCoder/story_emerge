@@ -1,101 +1,201 @@
 {
   "type": "object",
-  "additionalProperties": false,
-  "required": ["bible", "outline", "initial_state"],
   "properties": {
-    "bible": {"$ref": "#/$defs/bible"},
-    "outline": {"$ref": "#/$defs/outline"},
-    "initial_state": {"$ref": "#/$defs/initial_state"}
-  },
-  "$defs": {
-    "strings": {"type": "array", "items": {"type": "string"}},
-    "target_reader": {
-      "type": "object", "additionalProperties": false,
-      "required": ["portrait", "reads_for", "leaves_when"],
+    "title": {
+      "type": "string"
+    },
+    "story_core": {
+      "type": "object",
       "properties": {
-        "portrait": {"type": "string"},
-        "reads_for": {"type": "string"},
-        "leaves_when": {"type": "string"}
-      }
+        "story_engine": {
+          "type": "object",
+          "properties": {
+            "loop": {
+              "type": "string"
+            },
+            "progression_axis": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "loop",
+            "progression_axis"
+          ],
+          "additionalProperties": false
+        },
+        "reader_promises": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "promise": {
+                "type": "string"
+              },
+              "payoff_shape": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "promise",
+              "payoff_shape"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 3,
+          "maxItems": 5
+        },
+        "experience_contract": {
+          "type": "object",
+          "properties": {
+            "target_experience": {
+              "type": "string"
+            },
+            "narrative_principles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "drift_boundaries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "target_experience",
+            "narrative_principles",
+            "drift_boundaries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "story_engine",
+        "reader_promises",
+        "experience_contract"
+      ],
+      "additionalProperties": false
     },
-    "promise": {
-      "type": "object", "additionalProperties": false,
-      "required": ["core_experience", "must_remain", "must_not_become"],
+    "initial_story_state": {
+      "type": "object",
       "properties": {
-        "core_experience": {"type": "string"},
-        "must_remain": {"$ref": "#/$defs/strings"},
-        "must_not_become": {"$ref": "#/$defs/strings"}
-      }
+        "world": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "knowledge_and_beliefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "commitments_and_intentions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "facts",
+              "knowledge_and_beliefs",
+              "commitments_and_intentions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "characters": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "characters",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "world",
+        "characters",
+        "relationships"
+      ],
+      "additionalProperties": false
     },
-    "style": {
-      "type": "object", "additionalProperties": false,
-      "required": ["point_of_view", "tone", "prose_rules"],
+    "current_direction": {
+      "type": "object",
       "properties": {
-        "point_of_view": {"type": "string"}, "tone": {"type": "string"},
-        "prose_rules": {"$ref": "#/$defs/strings"}
-      }
-    },
-    "character": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "role", "trait", "desire", "weakness", "secret"],
-      "properties": {
-        "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"},
-        "trait": {"type": "string"}, "desire": {"type": "string"},
-        "weakness": {"type": "string"}, "secret": {"type": "string"}
-      }
-    },
-    "bible": {
-      "type": "object", "additionalProperties": false,
-      "required": ["title", "premise", "story_spine", "target_reader", "narrative_promise", "characters", "world_rules", "stable_facts", "ending_direction", "style"],
-      "properties": {
-        "title": {"type": "string"}, "premise": {"type": "string"}, "story_spine": {"type": "string"},
-        "target_reader": {"$ref": "#/$defs/target_reader"},
-        "narrative_promise": {"$ref": "#/$defs/promise"},
-        "characters": {"type": "array", "items": {"$ref": "#/$defs/character"}},
-        "world_rules": {"$ref": "#/$defs/strings"}, "stable_facts": {"$ref": "#/$defs/strings"},
-        "ending_direction": {"type": "string"}, "style": {"$ref": "#/$defs/style"}
-      }
-    },
-    "arc": {
-      "type": "object", "additionalProperties": false,
-      "required": ["name", "purpose"],
-      "properties": {
-        "name": {"type": "string"}, "purpose": {"type": "string"}
-      }
-    },
-    "track": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "direction", "status"],
-      "properties": {
-        "id": {"type": "string"}, "name": {"type": "string"},
-        "direction": {"type": "string"}, "status": {"type": "string", "enum": ["ongoing", "completed"]}
-      }
-    },
-    "outline": {
-      "type": "object", "additionalProperties": false,
-      "required": ["version", "current_arc", "tracks"],
-      "properties": {
-        "version": {"type": "integer"}, "current_arc": {"$ref": "#/$defs/arc"},
-        "tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}}
-      }
-    },
-    "character_state": {
-      "type": "object", "additionalProperties": false,
-      "required": ["character_id", "state"],
-      "properties": {"character_id": {"type": "string"}, "state": {"type": "string"}}
-    },
-    "situation_state": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "description"],
-      "properties": {"id": {"type": "string"}, "description": {"type": "string"}}
-    },
-    "initial_state": {
-      "type": "object", "additionalProperties": false,
-      "required": ["character_states", "situation_states"],
-      "properties": {
-        "character_states": {"type": "array", "items": {"$ref": "#/$defs/character_state"}},
-        "situation_states": {"type": "array", "items": {"$ref": "#/$defs/situation_state"}}
-      }
+        "focus": {
+          "type": "string"
+        },
+        "desired_shift": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "focus",
+        "desired_shift"
+      ],
+      "additionalProperties": false
     }
-  }
+  },
+  "required": [
+    "title",
+    "story_core",
+    "initial_story_state",
+    "current_direction"
+  ],
+  "additionalProperties": false
 }

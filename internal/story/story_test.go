@@ -1,129 +1,95 @@
 package story
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
-func TestProjectHasNoChapterOrWordQuota(t *testing.T) {
-	// 场景：用户只选择“超长故事”这一规模意图。
-	// 预期：项目校验不把它翻译成章节数、字数或场景配额。
-	project := Project{Idea: "一段故事", LengthProfile: "epic", MaxCalls: 1}
-	if err := ValidateProject(project); err != nil {
-		t.Fatal(err)
+func TestPatchReplacesCurrentFactsAndSupportsNewCharacters(t *testing.T) {
+	// 场景：旧失踪状态已失效，人物获知新消息，并与本章新出现的人物形成关系。
+	// 预期：相同 ID 替换当前值，失效事实移除；新人物与关系同批提交，不积累矛盾历史。
+	before := CurrentStoryState{
+		World:      []WorldFact{{ID: "missing", Description: "某人失踪"}, {ID: "closed", Description: "道路封闭"}},
+		Characters: []CharacterState{{ID: "a", Name: "甲", KnowledgeAndBeliefs: []string{"以为对方仍在城里"}}},
 	}
-}
-
-func TestApplyStoryUpdateAllowsEmptyLongTermChanges(t *testing.T) {
-	// 场景：一章只完成了短期气氛和人物互动，没有值得长期登记的新状态。
-	// 预期：空变化集合仍能把章节号推进一次，不能强迫 Editor 制造状态。
-	outline := testOutline()
-	current := NewInitialState(testInitialState(), outline)
-	update := StoryUpdate{
-		Chapter: 1, CharacterChanges: []CharacterStateChange{},
-		SituationStateChanges: []SituationStateChange{},
-		StoryStatus:           "ongoing",
+	patch := StatePatch{
+		World:         CollectionPatch[WorldFact]{Upsert: []WorldFact{{ID: "missing", Description: "已经找到当事人"}}, Remove: []string{"closed"}},
+		Characters:    CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲", KnowledgeAndBeliefs: []string{"怀疑乙隐瞒了行踪"}}, {ID: "b", Name: "乙"}}},
+		Relationships: CollectionPatch[RelationshipState]{Upsert: []RelationshipState{{ID: "ab", Characters: []string{"a", "b"}, Description: "开始相互试探"}}},
 	}
-
-	next, err := ApplyStoryUpdate(current, outline, update, nil)
+	next, err := ApplyPatch(before, patch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Chapter != 1 || len(next.SituationStates) != len(current.SituationStates) {
-		t.Fatalf("空 Story Update 改坏状态: %#v", next)
+	if len(next.World) != 1 || next.World[0].Description != "已经找到当事人" {
+		t.Fatalf("状态未替换: %#v", next.World)
+	}
+	if len(next.Characters) != 2 || len(next.Relationships) != 1 {
+		t.Fatalf("新增人物与关系丢失: %#v", next)
+	}
+	if len(next.Characters[0].KnowledgeAndBeliefs) != 1 {
+		t.Fatal("认知数组被追加成历史")
+	}
+	next.Characters[0].KnowledgeAndBeliefs[0] = "外部修改"
+	if before.Characters[0].KnowledgeAndBeliefs[0] != "以为对方仍在城里" || patch.Characters.Upsert[0].KnowledgeAndBeliefs[0] != "怀疑乙隐瞒了行踪" {
+		t.Fatal("结果与旧状态或补丁共享可变数组")
 	}
 }
 
-func TestRejectedDraftCannotMutateCurrentState(t *testing.T) {
-	// 场景：Editor 对草稿提出 revise，草稿中包含一个尚未获准提交的长期变化。
-	// 操作：只构造变化但不调用 ApplyStoryUpdate，模拟被否决草稿退出当前分支。
-	// 预期：调用方持有的 HEAD 快照保持原值，为新草稿提供干净基线。
-	outline := testOutline()
-	current := NewInitialState(testInitialState(), outline)
-	rejected := StoryUpdate{Chapter: 1, SituationStateChanges: []SituationStateChange{{Operation: "upsert", ID: "rejected", Description: "不应出现"}}, StoryStatus: "ongoing"}
-	_ = rejected
-
-	if len(current.SituationStates) != 1 || current.SituationStates[0].ID != "weather" {
-		t.Fatalf("未应用的草稿变化污染了当前状态: %#v", current.SituationStates)
+func TestInvalidPatchCannotMutateCommittedState(t *testing.T) {
+	// 场景：移除人物时仍留着引用它的关系，或同时更新/移除同一事实。
+	// 预期：整个补丁失败，已经提交的状态逐字段不变。
+	before := CurrentStoryState{Characters: []CharacterState{{ID: "a", Name: "甲"}, {ID: "b", Name: "乙"}}, Relationships: []RelationshipState{{ID: "ab", Characters: []string{"a", "b"}, Description: "朋友"}}}
+	saved := cloneStoryState(before)
+	for _, patch := range []StatePatch{
+		{Characters: CollectionPatch[CharacterState]{Remove: []string{"b"}}},
+		{World: CollectionPatch[WorldFact]{Remove: []string{"unknown"}}},
+		{Characters: CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲"}}, Remove: []string{"a"}}},
+		{Characters: CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲"}, {ID: "a", Name: "另一个甲"}}}},
+	} {
+		if _, err := ApplyPatch(before, patch); err == nil {
+			t.Fatal("非法补丁被接受")
+		}
+		if !reflect.DeepEqual(cloneStoryState(before), saved) {
+			t.Fatal("失败补丁污染了旧状态")
+		}
 	}
-}
-
-func TestStoryUpdateRejectsUnknownReferences(t *testing.T) {
-	// 场景：Editor 输出不存在的人物 ID。
-	// 预期：确定性校验拒绝人物引用，HEAD 事务可以在写盘前停止。
-	outline := testOutline()
-	current := NewInitialState(testInitialState(), outline)
-	update := StoryUpdate{
-		Chapter: 1, CharacterChanges: []CharacterStateChange{{CharacterID: "unknown", State: "变化"}},
-		StoryStatus: "ongoing",
-	}
-
-	if _, err := ApplyStoryUpdate(current, outline, update, nil); err == nil {
-		t.Fatal("未知引用却通过 Story Update 校验")
-	}
-}
-
-func TestLiveTensionsAreAReplaceableAttentionSnapshot(t *testing.T) {
-	// 场景：一章没有触碰旧张力，但 Editor 判断它仍有生命力，并新增一项真正改变故事重心的力量。
-	// 预期：程序整体保存 Editor 的选择，不按“本章未出现”自动老化，也不要求填满容量。
-	outline := testOutline()
-	current := NewInitialState(testInitialState(), outline)
-	current.LiveTensions = []string{"旅行者是否愿意真正离开熟悉生活"}
-	update := StoryUpdate{Chapter: 1, StoryStatus: "ongoing"}
-	tensions := []string{
-		" 旅行者是否愿意真正离开熟悉生活 ",
-		"同行者的保护正在与旅行者的自主选择发生拉扯",
-	}
-
-	next, err := ApplyStoryUpdate(current, outline, update, tensions)
+	// 同时删除对应关系即可合法移除人物，不要求保留已经失效的历史条目。
+	_, err := ApplyPatch(before, StatePatch{Characters: CollectionPatch[CharacterState]{Remove: []string{"b"}}, Relationships: CollectionPatch[RelationshipState]{Remove: []string{"ab"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(next.LiveTensions) != 2 || next.LiveTensions[0] != "旅行者是否愿意真正离开熟悉生活" {
-		t.Fatalf("Live Tension 快照没有按 Editor 输出整体保存: %#v", next.LiveTensions)
+}
+
+func TestQuietChaptersKeepFactsAndRollTrajectory(t *testing.T) {
+	// 场景：连续七章只承担情绪/日常功能，没有事实补丁。
+	// 预期：空补丁合法；只留最后五章轨迹；字数再多也不自行完结。
+	current := State{Direction: Direction{Focus: "共同生活", DesiredShift: "逐渐建立信任"}}
+	for number := 1; number <= 7; number++ {
+		commit := ChapterCommit{Chapter: number, Title: "日常", Plan: ChapterPlan{DirectionAction: "KEEP", ChapterIntent: ChapterIntent{IntendedEffect: "感受陪伴", WhyNow: "承接前一章情绪"}}, Review: EditorDecision{Action: EditorAccept, Reason: "日常可信"}, Result: CommitResult{ChapterSummary: "一起做饭", TrajectoryEntry: TrajectoryMove{StoryMove: "现实局势未变，呈现陪伴", NarrativeShape: "做饭 → 交谈"}}}
+		next, err := ApplyChapter(current, "# 第1章 日常\n\n甲和乙一起做饭。", commit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		current = next
 	}
-	if len(current.LiveTensions) != 1 {
-		t.Fatalf("应用下一章状态污染了当前 HEAD: %#v", current.LiveTensions)
+	if len(current.RecentTrajectory) != 5 || current.RecentTrajectory[0].Chapter != 3 || current.RecentTrajectory[4].Chapter != 7 {
+		t.Fatalf("轨迹窗口错误: %#v", current.RecentTrajectory)
+	}
+	if current.Completed || current.WrittenCharacters != 49 {
+		t.Fatalf("字数或完结规则错误: %#v", current)
 	}
 }
 
-func TestLiveTensionValidationOnlyEnforcesDeterministicBounds(t *testing.T) {
-	// 场景：空列表、重复项与超过容量的列表分别进入状态边界。
-	// 预期：空列表合法；重复和超限被拒绝；程序不判断内容属于关系、悬疑或其他题材。
-	if err := ValidateLiveTensions(nil); err != nil {
-		t.Fatalf("空 Live Tension 被错误拒绝: %v", err)
+func TestOnlyAcceptedEditorCanConfirmCompletion(t *testing.T) {
+	// 场景：模型在退回正文的同时宣称故事结束。
+	// 预期：输出被拒绝；只有明确 ACCEPT 才有权确认完结。
+	decision := EditorDecision{Action: EditorReplan, Reason: "意图不成立", BlockingIssues: []string{"需要重新考虑"}, StoryComplete: true}
+	if ValidateEditorDecision(decision) == nil {
+		t.Fatal("退回稿件确认了完结")
 	}
-	if err := ValidateLiveTensions([]string{"人物的选择仍有代价", " 人物的选择仍有代价 "}); err == nil {
-		t.Fatal("规范化后重复的 Live Tension 被允许")
-	}
-	if err := ValidateLiveTensions([]string{"一", "二", "三", "四", "五", "六"}); err == nil {
-		t.Fatal("超过状态容量的 Live Tension 被允许")
-	}
-}
-
-func TestReplanUsesGenericTracksWithoutFixedGenreType(t *testing.T) {
-	// 场景：Architect 为一个中性故事新增“修复旧桥”这股发展力量。
-	// 预期：程序只认识通用 StoryTrack，不要求悬疑、关系或升级等题材枚举。
-	old := testOutline()
-	next := old
-	next.Version = 1
-	next.Tracks = append([]StoryTrack(nil), old.Tracks...)
-	next.Tracks = append(next.Tracks, StoryTrack{
-		ID: "bridge", Name: "旧桥", Direction: "从争议走向共同修复", Status: "ongoing",
-	})
-
-	if err := ValidateReplan(old, next); err != nil {
-		t.Fatalf("通用 Track 被题材枚举拒绝: %v", err)
-	}
-}
-
-func testOutline() StoryOutline {
-	return StoryOutline{
-		Version: 0, CurrentArc: StoryArc{Name: "风雪前", Purpose: "让送信人真正离开家"},
-		Tracks: []StoryTrack{{ID: "journey", Name: "送信", Direction: "走出村庄", Status: "ongoing"}},
-	}
-}
-
-func testInitialState() InitialState {
-	return InitialState{
-		CharacterStates: []CharacterState{{CharacterID: "traveler", State: "尚未离家"}},
-		SituationStates: []SituationState{{ID: "weather", Description: "风雪将至"}},
+	decision = EditorDecision{Action: EditorAccept, Reason: "核心承诺已兑现", StoryComplete: true}
+	if err := ValidateEditorDecision(decision); err != nil {
+		t.Fatal(err)
 	}
 }

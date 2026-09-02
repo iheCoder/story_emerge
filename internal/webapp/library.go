@@ -54,7 +54,7 @@ func loadLibraryJob(id, root string) (*job, error) {
 		return nil, err
 	}
 	updatedAt := committedAt(root, project.CreatedAt)
-	status, phase := restoredStatus(state.Chapter, state.StoryStatus)
+	status, phase := restoredStatus(state.Chapter, state.Status())
 	return &job{
 		ID: id, Root: root, Length: normalizedLength(project.LengthProfile),
 		Status: status, Phase: phase, UpdatedAt: updatedAt,

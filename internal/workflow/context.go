@@ -2,55 +2,33 @@ package workflow
 
 import "story_emerge/internal/story"
 
-const recentSummaryLimit = 3
-
-// writerContext 只提供作品身份、当前方向、长期状态和短期接续信息。
-// 它没有逐章施工图，也不要求 Writer 覆盖全部 Story Track。
+// writerContext 是明确的输入白名单。初稿、修订都使用它，绝不序列化 Project 或检查点整体，
+// 因为它们含有 User Idea、Direction、Trajectory 等 Writer 不应读取的信息。
 type writerContext struct {
-	Bible                   story.StoryBible         `json:"story_bible"`
-	Outline                 story.StoryOutline       `json:"active_outline"`
-	State                   story.State              `json:"current_story_state"`
-	PreviousChapter         string                   `json:"previous_chapter"`
-	RecentSummaries         []story.ChapterSummary   `json:"recent_summaries"`
-	EarlyRelevantSummaries  []story.ChapterSummary   `json:"relevant_early_summaries"`
-	LatestReaderObservation *story.ReaderObservation `json:"latest_reader_observation,omitempty"`
-	NextChapter             int                      `json:"next_chapter"`
-	LengthProfile           string                   `json:"story_scale_intent"`
+	StoryCore         story.StoryCore         `json:"story_core"`
+	CurrentStoryState story.CurrentStoryState `json:"current_story_state"`
+	ChapterIntent     story.ChapterIntent     `json:"chapter_intent"`
+	PreviousChapter   string                  `json:"previous_chapter"`
+	TargetLength      string                  `json:"target_length"`
+	NextChapter       int                     `json:"next_chapter"`
 }
 
-func (engine *Engine) buildWriterContext(project story.Project, bible story.StoryBible, outline story.StoryOutline, state story.State, reader *story.ReaderObservation) (writerContext, error) {
-	// 上一章全文负责动作、语气与画面的近距离接续。
-	previous, err := engine.store.LoadChapter(state.Chapter)
-	if err != nil {
-		return writerContext{}, err
-	}
-
-	// 摘要只补充上一章全文之外的可见历史。完整上一章的摘要必须排除，避免同一信息
-	// 在上下文中获得两次权重；更早内容仅在与上一章有文本联系时按需召回。
-	summaries, err := engine.store.LoadSummaries()
-	if err != nil {
-		return writerContext{}, err
-	}
-	recent, early := visibleHistory(previous, summaries, state.Chapter)
-
-	return writerContext{
-		Bible: bible, Outline: outline, State: state,
-		PreviousChapter: previous, RecentSummaries: recent, EarlyRelevantSummaries: early,
-		LatestReaderObservation: reader, NextChapter: state.Chapter + 1,
-		LengthProfile: project.LengthProfile,
-	}, nil
+// lengthProgress 只给负责全局取舍的 Planner 和负责完结确认的 Editor。
+// TargetLength 为软目标；WrittenCharacters 来自已提交正文，不含任何未通过草稿。
+type lengthProgress struct {
+	TargetLength      string `json:"target_length"`
+	WrittenCharacters int    `json:"written_characters"`
 }
 
-// recentSummaries 返回最近 limit 条摘要的独立副本。
-func recentSummaries(summaries []story.ChapterSummary, limit int) []story.ChapterSummary {
-	// 返回新切片而非原底层数组，避免上下文序列化或测试修改窗口时意外改动正式状态。
-	// limit 由调用方控制为正数；即便传入更大值也安全退化为完整副本。
-
-	// 历史不超过窗口时，复制全部摘要。
-	if len(summaries) <= limit {
-		return append([]story.ChapterSummary(nil), summaries...)
-	}
-
-	// 历史超出窗口时，只复制末尾最近摘要。
-	return append([]story.ChapterSummary(nil), summaries[len(summaries)-limit:]...)
+type plannerInput struct {
+	UserIdea          string                  `json:"user_idea"`
+	StoryCore         story.StoryCore         `json:"story_core"`
+	CurrentStoryState story.CurrentStoryState `json:"current_story_state"`
+	CurrentDirection  story.Direction         `json:"current_direction"`
+	RecentTrajectory  []story.TrajectoryEntry `json:"recent_trajectory"`
+	ChapterLedger     []story.LedgerEntry     `json:"chapter_ledger"`
+	PreviousChapter   string                  `json:"previous_chapter"`
+	LengthProgress    lengthProgress          `json:"length_progress"`
+	NextChapter       int                     `json:"next_chapter"`
+	PlanningFeedback  string                  `json:"planning_feedback,omitempty"`
 }

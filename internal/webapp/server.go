@@ -105,7 +105,6 @@ func (server *Server) handleCreate(response http.ResponseWriter, request *http.R
 	if err := decodeRequest(response, request, &input); err != nil {
 		return
 	}
-	input.Idea = strings.TrimSpace(input.Idea)
 	input.Length = strings.ToLower(strings.TrimSpace(input.Length))
 	if err := validateCreateRequest(input); err != nil {
 		writeError(response, http.StatusBadRequest, err)
@@ -120,7 +119,7 @@ func (server *Server) handleCreate(response http.ResponseWriter, request *http.R
 }
 
 func validateCreateRequest(request CreateRequest) error {
-	if request.Idea == "" {
+	if strings.TrimSpace(request.Idea) == "" {
 		return fmt.Errorf("请先写下你的故事灵感")
 	}
 	if len([]rune(request.Idea)) > 10000 {
@@ -149,6 +148,12 @@ func (server *Server) createJob(length string) *job {
 func (server *Server) run(id, operation string, execute func(workflow.Reporter) error) {
 	reporter := func(event workflow.Event) { server.recordEvent(id, event) }
 	err := execute(reporter)
+	// 展示状态以已提交正文为准；预览期间提前完结也应显示真实结局。
+	snapshot, _ := server.copyJob(id)
+	committed, stateErr := store.New(snapshot.Root).LoadState()
+	if err == nil && stateErr != nil {
+		err = stateErr
+	}
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -162,10 +167,11 @@ func (server *Server) run(id, operation string, execute func(workflow.Reporter) 
 		return
 	}
 	current.Status = "ready"
-	if operation == "complete" {
-		current.Status = "complete"
-	}
 	current.Phase = completionMessage(operation)
+	if committed.Completed {
+		current.Status = "complete"
+		current.Phase = "故事已经完整收束"
+	}
 }
 
 func completionMessage(operation string) string {
@@ -204,16 +210,14 @@ func translateEvent(event workflow.Event) string {
 		return strings.Replace(event.Message, "已提交", "已经准备好了", 1)
 	case stage == "chapter":
 		return event.Message + "正在形成"
-	case strings.Contains(stage, "architect_replan"):
+	case strings.Contains(stage, "_plan_"):
 		return chapterLabel(stage) + "正在重新寻找方向"
-	case strings.HasSuffix(stage, "_write"):
+	case strings.Contains(stage, "_write_"):
 		return chapterLabel(stage) + "正在写下发生的一切"
-	case strings.Contains(stage, "_editor_review"):
-		return "编辑正在判断这一章是否真的需要干预"
-	case strings.Contains(stage, "_editor_finalize"):
+	case strings.Contains(stage, "_editor_"):
+		return "正在确认这一章是否自然成立"
+	case strings.HasSuffix(stage, "_commit"):
 		return "记住这一章真正重要的长期变化"
-	case strings.Contains(stage, "_reader"):
-		return "听听那个等待故事的人此刻在意什么"
 	case strings.Contains(stage, "_revise"):
 		return "调整这一章的呼吸"
 	case stage == "complete":
@@ -336,36 +340,36 @@ func loadSnapshot(current job) (storySnapshot, error) {
 	}
 
 	files := store.New(current.Root)
-	project, bible, state, err := loadCommittedStory(files)
+	project, core, state, err := loadCommittedStory(files)
 	if err != nil {
 		return snapshot, err
 	}
-	snapshot.Title, snapshot.Logline = bible.Title, bible.Premise
+	snapshot.Title, snapshot.Logline = project.Title, core.ExperienceContract.TargetExperience
 	snapshot.Idea, snapshot.CreatedAt = project.Idea, project.CreatedAt
-	snapshot.CurrentChapter, snapshot.StoryStatus = state.Chapter, state.StoryStatus
-	summaries, err := files.LoadSummaries()
+	snapshot.CurrentChapter, snapshot.StoryStatus = state.Chapter, state.Status()
+	summaries, err := files.LoadLedger()
 	if err != nil {
 		return snapshot, err
 	}
 	for _, summary := range summaries {
 		snapshot.Chapters = append(snapshot.Chapters, chapterMeta{
-			Number: summary.Number, Title: summary.Title, Summary: summary.Summary,
+			Number: summary.Chapter, Title: summary.Title, Summary: summary.Summary,
 		})
 	}
 	return snapshot, nil
 }
 
-func loadCommittedStory(files *store.Store) (story.Project, story.StoryBible, story.State, error) {
+func loadCommittedStory(files *store.Store) (story.Project, story.StoryCore, story.State, error) {
 	project, err := files.LoadProject()
 	if err != nil {
-		return story.Project{}, story.StoryBible{}, story.State{}, err
+		return story.Project{}, story.StoryCore{}, story.State{}, err
 	}
-	bible, err := files.LoadBible()
+	core, err := files.LoadCore()
 	if err != nil {
-		return story.Project{}, story.StoryBible{}, story.State{}, err
+		return story.Project{}, story.StoryCore{}, story.State{}, err
 	}
 	state, err := files.LoadState()
-	return project, bible, state, err
+	return project, core, state, err
 }
 
 func (server *Server) handleChapter(response http.ResponseWriter, request *http.Request) {
@@ -404,12 +408,12 @@ func loadChapter(root string, number int) (chapterResponse, error) {
 		return chapterResponse{}, fmt.Errorf("读取章节失败")
 	}
 	title := fmt.Sprintf("第 %d 章", number)
-	summaries, err := files.LoadSummaries()
+	summaries, err := files.LoadLedger()
 	if err != nil {
 		return chapterResponse{}, fmt.Errorf("读取章节摘要失败")
 	}
 	for _, summary := range summaries {
-		if summary.Number == number {
+		if summary.Chapter == number {
 			title = summary.Title
 			break
 		}
@@ -436,7 +440,7 @@ func (server *Server) startContinuation(response http.ResponseWriter, id string,
 		writeError(response, http.StatusConflict, fmt.Errorf("请先等三章试读完成"))
 		return
 	}
-	if state.StoryStatus == "completed" {
+	if state.Status() == "completed" {
 		writeError(response, http.StatusConflict, fmt.Errorf("故事已经抵达结局"))
 		return
 	}

@@ -114,7 +114,7 @@ func extractOutputText(outputs []responseOutput) string {
 // responseStatusError 将响应中的 error/incomplete/status 翻译成可诊断错误。
 func responseStatusError(stage string, payload responsePayload) error {
 	// 将“业务失败、输出不完整、未知状态”翻译成带阶段名的中文错误，
-	// 让 CLI 和 status 日志能直接定位是 Architect、Writer、Editor 或 Reader 哪一环出问题。
+	// 让 CLI 和 status 日志能直接定位是 Architect、Planner、Writer、Editor 或 Commit 哪一环出问题。
 	// 优先报告服务端显式错误。
 	if payload.Error != nil {
 		return fmt.Errorf("阶段 %s 失败 [%s]: %s", stage, payload.Error.Code, payload.Error.Message)

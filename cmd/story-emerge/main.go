@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +14,7 @@ import (
 	appconfig "story_emerge/internal/config"
 	"story_emerge/internal/llm"
 	"story_emerge/internal/store"
+	"story_emerge/internal/story"
 	"story_emerge/internal/webapp"
 	"story_emerge/internal/workflow"
 )
@@ -168,11 +168,16 @@ func showStatus(arguments []string) error {
 	}
 
 	// 读取已由 Engine 生成的状态视图并原样输出。
-	content, err := os.ReadFile(filepath.Join(*root, "status.md"))
+	files := store.New(*root)
+	project, err := files.LoadProject()
 	if err != nil {
 		return err
 	}
-	fmt.Print(string(content))
+	state, err := files.LoadState()
+	if err != nil {
+		return err
+	}
+	fmt.Print(story.RenderStatus(project, state))
 	return nil
 }
 

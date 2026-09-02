@@ -1,195 +1,169 @@
-// Package story 定义小说 Agent 的持久化领域模型。
-//
-// 模型只保存作品身份、未来方向和真正需要长期延续的当前状态。
-// 章节结构、字数、场景数量和转折方式属于 Writer 的创作自由，不进入数据契约。
+// Package story 将作品身份、当前事实、未来方向和近期轨迹分开保存。
+// 章节号、字数与完结标记只是运行元数据，不参与人物事实或文学评分。
 package story
 
 import "time"
 
 type Project struct {
 	Name          string    `json:"name"`
+	Title         string    `json:"title"`
 	Idea          string    `json:"idea"`
-	LengthProfile string    `json:"length_profile,omitempty"`
+	LengthProfile string    `json:"length_profile"`
 	MaxCalls      int       `json:"max_calls"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// Genesis 是 Architect 初始化模式的一次性交付。
+// Genesis 只由一次性的 Story Architect 生成。书名属于元数据，Core 只保留三个创作概念。
 type Genesis struct {
-	Bible        StoryBible   `json:"bible"`
-	Outline      StoryOutline `json:"outline"`
-	InitialState InitialState `json:"initial_state"`
+	Title             string            `json:"title"`
+	StoryCore         StoryCore         `json:"story_core"`
+	InitialStoryState CurrentStoryState `json:"initial_story_state"`
+	CurrentDirection  Direction         `json:"current_direction"`
 }
 
-// StoryBible 回答“这究竟是哪一本小说”。普通重规划没有修改它的权限。
-type StoryBible struct {
-	Title            string           `json:"title"`
-	Premise          string           `json:"premise"`
-	StorySpine       string           `json:"story_spine"`
-	TargetReader     TargetReader     `json:"target_reader"`
-	NarrativePromise NarrativePromise `json:"narrative_promise"`
-	Characters       []Character      `json:"characters"`
-	WorldRules       []string         `json:"world_rules"`
-	StableFacts      []string         `json:"stable_facts"`
-	EndingDirection  string           `json:"ending_direction"`
-	Style            StyleGuide       `json:"style"`
+type StoryCore struct {
+	StoryEngine        StoryEngine        `json:"story_engine"`
+	ReaderPromises     []ReaderPromise    `json:"reader_promises"`
+	ExperienceContract ExperienceContract `json:"experience_contract"`
+}
+type StoryEngine struct {
+	Loop            string `json:"loop"`
+	ProgressionAxis string `json:"progression_axis"`
+}
+type ReaderPromise struct {
+	Promise     string `json:"promise"`
+	PayoffShape string `json:"payoff_shape"`
+}
+type ExperienceContract struct {
+	TargetExperience    string   `json:"target_experience"`
+	NarrativePrinciples []string `json:"narrative_principles"`
+	DriftBoundaries     []string `json:"drift_boundaries"`
 }
 
-// TargetReader 必须像一个有具体经历和偏好的真人，而不是宽泛人口标签。
-type TargetReader struct {
-	Portrait   string `json:"portrait"`
-	ReadsFor   string `json:"reads_for"`
-	LeavesWhen string `json:"leaves_when"`
+// CurrentStoryState 保存此刻仍有效的结果。人物认知归人物所有，不混入客观世界事实。
+type CurrentStoryState struct {
+	World         []WorldFact         `json:"world"`
+	Characters    []CharacterState    `json:"characters"`
+	Relationships []RelationshipState `json:"relationships"`
 }
-
-type NarrativePromise struct {
-	CoreExperience string   `json:"core_experience"`
-	MustRemain     []string `json:"must_remain"`
-	MustNotBecome  []string `json:"must_not_become"`
+type WorldFact struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
 }
-
-type StyleGuide struct {
-	PointOfView string   `json:"point_of_view"`
-	Tone        string   `json:"tone"`
-	ProseRules  []string `json:"prose_rules"`
-}
-
-type Character struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Role     string `json:"role"`
-	Trait    string `json:"trait"`
-	Desire   string `json:"desire"`
-	Weakness string `json:"weakness"`
-	Secret   string `json:"secret"`
-}
-
-// StoryOutline 只表达当前阶段和若干正在演化的力量，不分配逐章任务。
-type StoryOutline struct {
-	Version    int          `json:"version"`
-	CurrentArc StoryArc     `json:"current_arc"`
-	Tracks     []StoryTrack `json:"tracks"`
-}
-
-type StoryArc struct {
-	Name    string `json:"name"`
-	Purpose string `json:"purpose"`
-}
-
-// StoryTrack 没有题材类型。Status 只表示这股力量是否仍需要继续发展。
-type StoryTrack struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Direction string `json:"direction"`
-	Status    string `json:"status"`
-}
-
-// InitialState 只保存正文开始前就必须长期维持的动态状态。
-type InitialState struct {
-	CharacterStates []CharacterState `json:"character_states"`
-	SituationStates []SituationState `json:"situation_states"`
-}
-
-// State 是 HEAD 指向的精简快照，不承担小说历史数据库职责。
-// LiveTensions 是作者侧的有损注意力状态，不具备 Character/Situation 的事实权威。
-type State struct {
-	Chapter         int              `json:"chapter"`
-	CharacterStates []CharacterState `json:"character_states"`
-	SituationStates []SituationState `json:"situation_states"`
-	LiveTensions    []string         `json:"live_tensions"`
-	OutlineVersion  int              `json:"outline_version"`
-	StoryStatus     string           `json:"story_status"`
-}
-
-// CharacterState 用一段当前态描述承载真正需要长期记住的人物变化。
-// 它刻意不拆成知识图谱、关系图或物品图，避免状态重新膨胀。
 type CharacterState struct {
-	CharacterID string `json:"character_id"`
-	State       string `json:"state"`
+	ID                       string   `json:"id"`
+	Name                     string   `json:"name"`
+	Facts                    []string `json:"facts"`
+	KnowledgeAndBeliefs      []string `json:"knowledge_and_beliefs"`
+	CommitmentsAndIntentions []string `json:"commitments_and_intentions"`
+}
+type RelationshipState struct {
+	ID          string   `json:"id"`
+	Characters  []string `json:"characters"`
+	Description string   `json:"description"`
+}
+type Direction struct {
+	Focus        string `json:"focus"`
+	DesiredShift string `json:"desired_shift"`
 }
 
-// SituationState 只保存会改变人物可选行动或客观现实的当前局势。
-// 它不是章节流水、悬念清单或 Outline 的副本；不再成立的局势应由后续更新删除。
-type SituationState struct {
-	ID          string `json:"id"`
-	Description string `json:"description"`
+// ChapterIntent 允许人物、认知、情绪和读者体验上的贡献，不把每章任务化。
+type ChapterIntent struct {
+	IntendedEffect string   `json:"intended_effect"`
+	WhyNow         string   `json:"why_now"`
+	Constraints    []string `json:"constraints"`
 }
-
-// StoryUpdate 只描述最终正文造成的长期变化。两个 change 集合都允许为空。
-type StoryUpdate struct {
-	Chapter               int                    `json:"chapter"`
-	CharacterChanges      []CharacterStateChange `json:"character_changes"`
-	SituationStateChanges []SituationStateChange `json:"situation_state_changes"`
-	StoryStatus           string                 `json:"story_status"`
+type ChapterPlan struct {
+	DirectionAction  string        `json:"direction_action"`
+	CurrentDirection *Direction    `json:"current_direction"`
+	ChapterIntent    ChapterIntent `json:"chapter_intent"`
 }
-
-type CharacterStateChange struct {
-	CharacterID string `json:"character_id"`
-	State       string `json:"state"`
-}
-
-// SituationStateChange 使用 upsert/remove 表达有限、可验证的客观局势变化。
-type SituationStateChange struct {
-	Operation   string `json:"operation"`
-	ID          string `json:"id"`
-	Description string `json:"description"`
-}
-
-// ChapterSummary 是正文的读者可见短期记忆，独立于长期 Story State。
-type ChapterSummary struct {
-	Number     int      `json:"number"`
-	Title      string   `json:"title"`
-	Summary    string   `json:"summary"`
-	KeyChanges []string `json:"key_changes"`
-}
-
 type EditorAction string
 
 const (
-	EditorAccept EditorAction = "accept"
-	EditorRevise EditorAction = "revise"
-	EditorReplan EditorAction = "replan"
+	EditorAccept EditorAction = "ACCEPT"
+	EditorRevise EditorAction = "REVISE_WRITER"
+	EditorReplan EditorAction = "RETURN_TO_PLANNER"
 )
 
-// EditorDecision 只判断当前结果是否严重到值得干预，不承担逐段导演职责。
+// Editor 只裁定正文准入和是否已经完结；输出中没有状态补丁或下一章计划。
 type EditorDecision struct {
-	Action       EditorAction   `json:"action"`
-	Reason       string         `json:"reason"`
-	Guidance     string         `json:"guidance"`
-	StoryUpdate  StoryUpdate    `json:"story_update"`
-	Summary      ChapterSummary `json:"reader_visible_summary"`
-	LiveTensions []string       `json:"live_tensions"`
+	Action         EditorAction `json:"action"`
+	Reason         string       `json:"reason"`
+	BlockingIssues []string     `json:"blocking_issues"`
+	StoryComplete  bool         `json:"story_complete"`
 }
 
-// EditorDecisionRecord 是正式历史需要保留的最小编辑轨迹。
-// Story Update 和摘要各有自己的单一文件，不在这里重复保存。
-type EditorDecisionRecord struct {
-	Action   EditorAction `json:"action"`
-	Reason   string       `json:"reason"`
-	Guidance string       `json:"guidance,omitempty"`
+// CollectionPatch 用相同 ID 的完整当前值完成 create/update/replace，用 remove 删除失效项。
+// 未触碰的条目保留；数组字段属于当前快照，不与旧数组持续拼接。
+type CollectionPatch[T any] struct {
+	Upsert []T      `json:"upsert"`
+	Remove []string `json:"remove"`
+}
+type StatePatch struct {
+	World         CollectionPatch[WorldFact]         `json:"world"`
+	Characters    CollectionPatch[CharacterState]    `json:"characters"`
+	Relationships CollectionPatch[RelationshipState] `json:"relationships"`
+}
+type TrajectoryMove struct {
+	StoryMove      string `json:"story_move"`
+	NarrativeShape string `json:"narrative_shape"`
+}
+type TrajectoryEntry struct {
+	Chapter int `json:"chapter"`
+	TrajectoryMove
 }
 
-// EditorFinalizeResult 在干预预算耗尽后只提炼状态，不再评价或阻止正文。
-type EditorFinalizeResult struct {
-	StoryUpdate  StoryUpdate    `json:"story_update"`
-	Summary      ChapterSummary `json:"reader_visible_summary"`
-	LiveTensions []string       `json:"live_tensions"`
+// CommitResult 只提取已接受正文。章节号、标题、字数与完成状态由程序和 Editor 提供。
+type CommitResult struct {
+	StatePatch      StatePatch     `json:"state_patch"`
+	TrajectoryEntry TrajectoryMove `json:"trajectory_entry"`
+	ChapterSummary  string         `json:"chapter_summary"`
+}
+type LedgerEntry struct {
+	Chapter int    `json:"chapter"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
 }
 
-// EditorReviewLog 保存本章有限干预的可审计轨迹，不参与下一章创作上下文。
-type EditorReviewLog struct {
-	Chapter       int                    `json:"chapter"`
-	Decisions     []EditorDecisionRecord `json:"decisions"`
-	Interventions int                    `json:"interventions"`
-	AutoAccepted  bool                   `json:"auto_accepted"`
+// ChapterCommit 将最终计划、验收和提取结果绑定到同一章；失败尝试只留在 .work。
+type ChapterCommit struct {
+	Chapter int            `json:"chapter"`
+	Title   string         `json:"title"`
+	Plan    ChapterPlan    `json:"plan"`
+	Review  EditorDecision `json:"review"`
+	Result  CommitResult   `json:"result"`
 }
 
-// ReaderObservation 是目标读者对当前章的一次独立观察。
-type ReaderObservation struct {
-	Chapter     int      `json:"chapter"`
-	Attention   []string `json:"attention"`
-	Orientation string   `json:"orientation"`
-	WhatLanded  []string `json:"what_landed"`
-	Friction    []string `json:"friction"`
-	Momentum    string   `json:"momentum"`
+// State 是 HEAD 对应的检查点。Writer 只接收 Story，不读取方向、轨迹或全书进度。
+type State struct {
+	Chapter           int               `json:"chapter"`
+	Story             CurrentStoryState `json:"current_story_state"`
+	Direction         Direction         `json:"current_direction"`
+	RecentTrajectory  []TrajectoryEntry `json:"recent_trajectory"`
+	WrittenCharacters int               `json:"written_characters"`
+	Completed         bool              `json:"completed"`
+}
+
+// LengthGoal 将现有产品篇幅选择解释成全书软目标，不分配章节数或单章字数。
+// 用户在 User Idea 明确指定的篇幅优先，由 Architect/Planner 按原始授权理解。
+func LengthGoal(profile string) string {
+	switch profile {
+	case "short":
+		return "约 1～3 万字"
+	case "medium":
+		return "约 8～10 万字"
+	case "long":
+		return "约 15～20 万字"
+	case "epic":
+		return "约 30 万字或以上"
+	default:
+		return ""
+	}
+}
+func (state State) Status() string {
+	if state.Completed {
+		return "completed"
+	}
+	return "ongoing"
 }
