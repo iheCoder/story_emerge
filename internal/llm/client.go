@@ -92,7 +92,14 @@ func NewClient(config Config) (*Client, error) {
 }
 
 // Generate 执行一个完整的模型请求，并返回统一文本、用量和响应元数据。
-func (client *Client) Generate(ctx context.Context, request Request) (Result, error) {
+func (client *Client) Generate(ctx context.Context, request Request) (result Result, err error) {
+	// 错误体可能由网关回显请求信息；错误进入页面和持久化日志前，遮蔽本角色密钥。
+	// 保留错误链，使 context 取消等原有判断仍然有效。
+	defer func() {
+		if err != nil && strings.Contains(err.Error(), client.config.APIKey) {
+			err = redactedError{cause: err, message: strings.ReplaceAll(err.Error(), client.config.APIKey, "[REDACTED]")}
+		}
+	}()
 	// 所有阶段从这里进入网络层：先校验输出预算，再构造协议负载，最后执行有限重试。
 	// 输出 token 上限是成本护栏，缺失时宁可立即失败也不发送无限制请求。
 	// 检查输出预算。
@@ -109,6 +116,14 @@ func (client *Client) Generate(ctx context.Context, request Request) (Result, er
 	// 执行带有限重试的网络调用。
 	return client.sendWithRetry(ctx, request.Stage, body)
 }
+
+type redactedError struct {
+	cause   error
+	message string
+}
+
+func (err redactedError) Error() string { return err.message }
+func (err redactedError) Unwrap() error { return err.cause }
 
 // buildRequest 将业务请求编码成 Responses API JSON，不执行网络 IO。
 func (client *Client) buildRequest(request Request) ([]byte, error) {
@@ -178,11 +193,15 @@ func (client *Client) sendOnce(ctx context.Context, stage string, body []byte) (
 		return Result{}, isTransientNetworkError(err), fmt.Errorf("调用 %s 失败: %w", stage, err)
 	}
 	defer response.Body.Close()
-	return client.decodeResponse(stage, response, time.Since(started))
+	// Do 返回时可能仅收到响应头。完整耗时必须包含随后读取和解码响应体的时间，
+	// 否则长文本生成几十秒也会在日志里被错误记成几百毫秒。
+	result, retry, err := client.decodeResponse(stage, response)
+	result.Duration = time.Since(started)
+	return result, retry, err
 }
 
 // decodeResponse 把 HTTP 响应转换为 Result 或带阶段上下文的错误。
-func (client *Client) decodeResponse(stage string, response *http.Response, duration time.Duration) (Result, bool, error) {
+func (client *Client) decodeResponse(stage string, response *http.Response) (Result, bool, error) {
 	// 先按 HTTP 状态分类，再解析成功响应；错误体只读取有限字节，避免把网关噪声带入日志。
 	// 即使 HTTP 200，只有 completed 且包含可见 output_text 才算成功，
 	// 因为 Responses API 可能返回 incomplete 或 tool-call 等非正文结果。
@@ -201,13 +220,16 @@ func (client *Client) decodeResponse(stage string, response *http.Response, dura
 
 	// 检查业务完成状态，防止把 incomplete/tool-call 当作正文。
 	text := extractOutputText(payload.Output)
-	if payload.Status != "completed" || strings.TrimSpace(text) == "" {
-		return Result{}, false, responseStatusError(stage, payload)
-	}
-	return Result{
+	result := Result{
 		Text: text, Model: payload.Model, ResponseID: payload.ID,
-		Usage: payload.Usage.toUsage(), Duration: duration,
-	}, false, nil
+		Usage: payload.Usage.toUsage(),
+	}
+	if payload.Status != "completed" || strings.TrimSpace(text) == "" {
+		// 连同错误保留供应商已返回的证据，供运行日志记录用量及响应 ID。
+		// err 仍非 nil，调用方不得把不完整文本当作成功结果或正式正文。
+		return result, false, responseStatusError(stage, payload)
+	}
+	return result, false, nil
 }
 
 // waitForRetry 可被 context 中断的退避等待。

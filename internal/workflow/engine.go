@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"story_emerge/internal/llm"
 	"story_emerge/internal/prompts"
@@ -55,7 +57,9 @@ func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Rep
 }
 
 // emit 向可选观察者发送一条阶段进度事件。
-func (engine *Engine) emit(stage, message string) {
+func (engine *Engine) emit(stage, message string, attrs ...slog.Attr) {
+	engine.log(slog.LevelInfo, stage, message, attrs...)
+
 	// 进度通知是旁路能力，不能因 reporter 缺失阻断核心写作流程。
 	if engine.reporter != nil {
 		engine.reporter(Event{Stage: stage, Message: message})
@@ -74,13 +78,38 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 		return llm.Result{}, fmt.Errorf("已达到模型调用上限 %d", engine.maxCalls)
 	}
 	engine.usedCalls++
-	engine.emit(request.Stage, "正在调用模型")
+	engine.emit(request.Stage, "正在调用模型",
+		slog.String("role", request.Role), slog.Int("call", engine.usedCalls),
+		slog.Int("max_calls", engine.maxCalls), slog.Int("max_output_tokens", request.MaxOutputTokens))
 
 	// 调用具体模型实现；错误带上阶段名后返回。
+	started := time.Now()
 	result, err := engine.generator.Generate(ctx, request)
+	attrs := []slog.Attr{
+		slog.String("role", request.Role), slog.Int64("duration_ms", time.Since(started).Milliseconds()),
+	}
+	if result.Model != "" {
+		attrs = append(attrs, slog.String("model", result.Model))
+	}
+	if result.ResponseID != "" {
+		attrs = append(attrs, slog.String("response_id", result.ResponseID))
+	}
+	// 网络失败可能没有供应商用量，缺失信息不能被日志伪装成“消耗为零”。
+	if result.Usage != (llm.Usage{}) {
+		attrs = append(attrs, slog.Int("input_tokens", result.Usage.InputTokens), slog.Int("output_tokens", result.Usage.OutputTokens))
+	}
 	if err != nil {
+		engine.log(slog.LevelError, request.Stage, "模型请求失败", append(attrs, slog.String("error", err.Error()))...)
+		// 不完整响应不能进入 Commit，但其已返回文本仍是定位截断位置的有效证据。
+		// 仅放入诊断目录，不尝试把半截 JSON 补成可提交事实。
+		if result.Text != "" {
+			if saveErr := engine.store.SaveWorking(chapterNumberFromStage(request.Stage), request.Stage+"-incomplete.txt", result.Text); saveErr != nil {
+				engine.log(slog.LevelError, request.Stage, "保存不完整响应失败", slog.String("error", saveErr.Error()))
+			}
+		}
 		return llm.Result{}, fmt.Errorf("%s: %w", request.Stage, err)
 	}
+	engine.log(slog.LevelInfo, request.Stage, "模型请求成功", attrs...)
 
 	// 初始化和逐章阶段都在已准备的项目目录中运行，成功用量统一立即落盘。
 	if err := engine.store.AppendUsage(request.Stage, result); err != nil {

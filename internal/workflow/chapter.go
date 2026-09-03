@@ -13,7 +13,10 @@ const maxWriterRevisions = 2
 
 // Run 只在完整章节之间更新运行状态。limit 是本次运行的章节上限；全书停止由 Editor
 // 对已接受正文的完结判断决定，不根据字数、章节数量或某个固定阶段自动结束。
-func (engine *Engine) Run(ctx context.Context, limit int) error {
+func (engine *Engine) Run(ctx context.Context, limit int) (err error) {
+	engine.emit("run", "开始续写")
+	defer func() { engine.logOutcome("run", err) }()
+
 	if limit < 0 {
 		return fmt.Errorf("章节上限不能为负数")
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // roundTripFunc 把函数适配成 http.RoundTripper，使客户端测试完全脱离真实网络。
@@ -59,7 +60,7 @@ func TestGenerateDoesNotLeakAPIKeyInHTTPError(t *testing.T) {
 	// 让假的传输层返回 HTTP 400。
 	t.Parallel()
 	transport := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		return jsonHTTPResponse(http.StatusBadRequest, "bad request"), nil
+		return jsonHTTPResponse(http.StatusBadRequest, "bad request, echoed token: top-secret"), nil
 	})
 	client, _ := NewClient(Config{Provider: "test", Model: "model", Endpoint: "https://example.test", APIKey: "top-secret"})
 	client.http.Transport = transport
@@ -68,6 +69,36 @@ func TestGenerateDoesNotLeakAPIKeyInHTTPError(t *testing.T) {
 	_, err := client.Generate(context.Background(), Request{Stage: "test", Input: "x", MaxOutputTokens: 1})
 	if err == nil || strings.Contains(err.Error(), "top-secret") {
 		t.Fatalf("expected redacted HTTP error, got %v", err)
+	}
+}
+
+func TestIncompleteResponseRetainsDiagnosticsAndMeasuresBodyRead(t *testing.T) {
+	// 场景：很快收到 HTTP 200 响应头，但随后等待模型响应体；响应最终因 token 上限截断。
+	// 预期：仍然返回错误、不重试，保留供应商元数据和半截文本，耗时包含读取响应体。
+	client, _ := NewClient(Config{Model: "model", Endpoint: "https://example.test", APIKey: "secret"})
+	var bodyStarted, bodyFinished time.Time
+	calls := 0
+	client.http.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls++
+		reader, writer := io.Pipe()
+		go func() {
+			bodyStarted = time.Now()
+			time.Sleep(25 * time.Millisecond)
+			bodyFinished = time.Now()
+			_, _ = io.WriteString(writer, `{"id":"resp_cut","model":"model","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}],"usage":{"input_tokens":20,"output_tokens":10000,"total_tokens":10020}}`)
+			_ = writer.Close()
+		}()
+		return &http.Response{StatusCode: http.StatusOK, Body: reader, Header: make(http.Header)}, nil
+	})
+	result, err := client.Generate(context.Background(), Request{Stage: "chapter_003_commit", MaxOutputTokens: 10000})
+	if err == nil || !strings.Contains(err.Error(), "max_output_tokens") || calls != 1 {
+		t.Fatalf("截断响应分类错误: %v calls=%d", err, calls)
+	}
+	if result.Text != "partial" || result.ResponseID != "resp_cut" || result.Usage.OutputTokens != 10000 {
+		t.Fatalf("截断响应诊断信息丢失: %#v", result)
+	}
+	if result.Duration < bodyFinished.Sub(bodyStarted) {
+		t.Fatalf("耗时未包含响应体读取: %s", result.Duration)
 	}
 }
 
