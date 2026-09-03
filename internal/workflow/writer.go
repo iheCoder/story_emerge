@@ -65,11 +65,9 @@ func validateDraft(chapter string) error {
 	if !strings.HasPrefix(trimmed, "# 第") {
 		return fmt.Errorf("正文缺少标准章节标题")
 	}
-	for _, marker := range []string{"作为AI", "作为 AI", "```"} {
-		if strings.Contains(chapter, marker) {
-			return fmt.Errorf("正文出现非小说元文本: %s", marker)
-		}
-	}
+
+	// 人物可以谈论 AI，正文也可以呈现代码；不能用全文关键词匹配判定出戏。
+	// 是否混入创作说明交给 Editor 结合语境评审，此处不删改正文内容。
 
 	return nil
 }

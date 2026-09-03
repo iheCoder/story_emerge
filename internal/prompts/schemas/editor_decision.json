@@ -16,8 +16,7 @@
       "type": "array",
       "items": {
         "type": "string"
-      },
-      "maxItems": 3
+      }
     },
     "story_complete": {
       "type": "boolean"

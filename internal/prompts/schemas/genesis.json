@@ -40,9 +40,7 @@
               "payoff_shape"
             ],
             "additionalProperties": false
-          },
-          "minItems": 3,
-          "maxItems": 5
+          }
         },
         "experience_contract": {
           "type": "object",

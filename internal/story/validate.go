@@ -34,9 +34,9 @@ func ValidateCore(core StoryCore) error {
 	if !nonempty(core.StoryEngine.Loop) || !nonempty(core.StoryEngine.ProgressionAxis) {
 		return fmt.Errorf("Story Engine 缺少循环或累积方向")
 	}
-	if len(core.ReaderPromises) < 3 || len(core.ReaderPromises) > 5 {
-		return fmt.Errorf("Reader Promises 应保留 3～5 个核心承诺")
-	}
+
+	// 承诺数量由创作提示词指导，不因条数偏离建议而拒绝整个作品核心。
+	// 已提供的承诺仍须说明内容与兑现方式，供后续生成和完结判断使用。
 	for _, promise := range core.ReaderPromises {
 		if !nonempty(promise.Promise) || !nonempty(promise.PayoffShape) {
 			return fmt.Errorf("核心承诺缺少内容或兑现方式")
@@ -72,18 +72,16 @@ func ValidatePlan(plan ChapterPlan) error {
 	if !nonempty(plan.ChapterIntent.IntendedEffect) || !nonempty(plan.ChapterIntent.WhyNow) {
 		return fmt.Errorf("章节意图缺少叙事效果或时机理由")
 	}
-	if len(plan.ChapterIntent.Constraints) > 2 {
-		return fmt.Errorf("章节约束最多两条")
-	}
+
+	// 约束保持精简是 Planner 的写作指导；必要约束多于建议条数时仍完整交给 Writer。
 	return nil
 }
 func ValidateEditorDecision(decision EditorDecision) error {
 	if !nonempty(decision.Reason) {
 		return fmt.Errorf("Editor 缺少判断原因")
 	}
-	if len(decision.BlockingIssues) > 3 {
-		return fmt.Errorf("Editor 最多返回三个阻断问题")
-	}
+
+	// 问题数量不决定评审是否有效；保留全部问题供修订，但动作与问题必须一致。
 	switch decision.Action {
 	case EditorAccept:
 		if len(decision.BlockingIssues) != 0 {
