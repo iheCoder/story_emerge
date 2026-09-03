@@ -159,7 +159,7 @@ func (store *Store) LoadLedger() ([]story.LedgerEntry, error) {
 }
 
 // CommitChapter 自行从 HEAD 计算下一份状态，调用者不能传入一个与补丁不一致的快照。
-// 任一文件写入失败时旧 HEAD 保持不变，工作流下次可从验收恢复点重试 Commit。
+// 任一文件写入失败时旧 HEAD 保持不变，工作流下次从正式历史生成尚未提交的章节。
 func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (story.State, error) {
 	current, err := store.LoadState()
 	if err != nil {
@@ -279,7 +279,7 @@ func (store *Store) readJSON(relative string, target any) error {
 	}
 
 	// Decode 一次只消费一个 JSON 值；再读一次确认已到文件结尾，拒绝追加对象或尾部垃圾。
-	// 尤其不能让验收恢复点的前半段解析成功，就掩盖磁盘文件实际已经损坏的事实。
+	// 首个对象解析成功不代表整个状态文件完整，不能忽略尾部损坏后继续生成。
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return fmt.Errorf("解析 %s 失败: JSON 后存在多余内容", relative)
 	}

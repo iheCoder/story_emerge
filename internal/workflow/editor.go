@@ -41,7 +41,7 @@ func (engine *Engine) reviewDraft(ctx context.Context, base plannerInput, direct
 		return decision, err
 	}
 
-	// 单份评审文件只是诊断材料；只有主流程把 ACCEPT 与正文共同保存，才形成恢复点。
+	// 单份评审文件只是诊断材料；ACCEPT 只允许本轮正文进入提取，不建立跨运行的恢复点。
 	// 先落盘再做领域检查，便于定位非法动作或不完整的评审内容。
 	if err := engine.store.SaveWorking(base.NextChapter, stage+".json", decision); err != nil {
 		return decision, err

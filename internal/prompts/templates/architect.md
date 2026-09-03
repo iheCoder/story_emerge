@@ -26,8 +26,8 @@ initial_story_state：
 - world 保存客观世界事实。
 - characters 分别保存 facts、knowledge_and_beliefs、commitments_and_intentions。
   人物的猜测或错误认识必须归属于具体人物，不能写成世界真相。
-- relationships 保存影响未来互动的关系现实。
-  条目使用稳定 id，关系的 characters 引用人物 id。不要生成人物百科、世界百科或历史档案。
+- relationships 优先保存影响未来互动的关系现实。
+  条目使用稳定 id，characters 中引用的人物 id 不得重复，且都必须出现在初始 characters 中。单个人的事实、认知与承诺写入该人物字段。不要为了补齐关系参与者而额外建立人物档案。不要生成人物百科、世界百科或历史档案。
 
 current_direction：
 只输出 focus 和 desired_shift，描述当前这一段最值得发生的变化。

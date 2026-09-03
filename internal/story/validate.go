@@ -132,10 +132,14 @@ func ValidateStoryState(state CurrentStoryState) error {
 	}
 	relations := map[string]bool{}
 	for _, relation := range state.Relationships {
-		if !nonempty(relation.ID) || relations[relation.ID] || !nonempty(relation.Description) || len(relation.Characters) < 2 {
+		if !nonempty(relation.ID) || relations[relation.ID] || !nonempty(relation.Description) {
 			return fmt.Errorf("关系无效: %s", relation.ID)
 		}
+
 		relations[relation.ID] = true
+
+		// 参与者索引不要求覆盖关系中所有人，避免为尚未建档的配角阻断章节提交。
+		// 已提供的引用仍必须存在且不重复；关系是否值得保存由提取提示词指导。
 		participants := map[string]bool{}
 		for _, id := range relation.Characters {
 			if !characters[id] || participants[id] {

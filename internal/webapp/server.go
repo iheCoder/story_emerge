@@ -435,16 +435,27 @@ func (server *Server) startContinuation(response http.ResponseWriter, id string,
 		writeError(response, http.StatusNotFound, fmt.Errorf("故事不存在"))
 		return
 	}
+
+	// 是否能够继续取决于正式状态能否读取，不能把前三章试读变成失败后的恢复门槛。
+	// 读取错误单独返回，避免把检查点损坏误报为“还在生成”，让用户永远等待。
 	state, err := store.New(current.Root).LoadState()
-	if err != nil || state.Chapter < previewChapterCount {
-		writeError(response, http.StatusConflict, fmt.Errorf("请先等三章试读完成"))
+	if err != nil {
+		writeError(response, http.StatusConflict, fmt.Errorf("暂时无法继续生长：%w", err))
 		return
 	}
-	if state.Status() == "completed" {
+
+	// 正式完结优先于试读章数，第一章就完结的短篇也不能再启动。
+	if state.Completed {
 		writeError(response, http.StatusConflict, fmt.Errorf("故事已经抵达结局"))
 		return
 	}
-	if !server.markRunning(id, operation) {
+
+	// 逐章生长从第 0 章起就可用；完成全书仍保留读完三章再选择的产品入口。
+	if operation == "complete" && state.Chapter < previewChapterCount {
+		writeError(response, http.StatusConflict, fmt.Errorf("请先等三章试读完成"))
+		return
+	}
+	if !server.markRunning(id) {
 		writeError(response, http.StatusConflict, fmt.Errorf("故事正在生成中"))
 		return
 	}
@@ -455,7 +466,8 @@ func (server *Server) startContinuation(response http.ResponseWriter, id string,
 	})
 }
 
-func (server *Server) markRunning(id, operation string) bool {
+// markRunning 在锁内检查并占用任务，防止不同页面同时让同一本书继续生长。
+func (server *Server) markRunning(id string) bool {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	current := server.jobs[id]
@@ -465,9 +477,7 @@ func (server *Server) markRunning(id, operation string) bool {
 	current.Running = true
 	current.Status = "writing"
 	current.Error = ""
-	current.Phase = map[string]string{
-		"next": "下一章开始形成", "complete": "故事正在继续生长",
-	}[operation]
+	current.Phase = "故事正在继续生长"
 	return true
 }
 

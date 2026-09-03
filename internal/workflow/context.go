@@ -32,3 +32,25 @@ type plannerInput struct {
 	NextChapter       int                     `json:"next_chapter"`
 	PlanningFeedback  string                  `json:"planning_feedback,omitempty"`
 }
+
+// chapterPlanningContext 汇集下一章的正式历史，不读取 .work 中尚未提交的产物。
+// 上下文只在本次章节运行开始时组装，规划循环中的反馈和候选方向由调用方局部维护。
+func (engine *Engine) chapterPlanningContext(project story.Project, core story.StoryCore, current story.State) (plannerInput, error) {
+	// 上一章与 Ledger 都受 HEAD 约束，磁盘中的孤儿正文不能成为生成依据。
+	previous, err := engine.store.LoadChapter(current.Chapter)
+	if err != nil {
+		return plannerInput{}, err
+	}
+	ledger, err := engine.store.LoadLedger()
+	if err != nil {
+		return plannerInput{}, err
+	}
+
+	// Planner 负责全局取舍，可以看到原始创意和历史轨迹；Writer 的输入必须另外按白名单构造。
+	return plannerInput{
+		UserIdea: project.Idea, StoryCore: core, CurrentStoryState: current.Story,
+		CurrentDirection: current.Direction, RecentTrajectory: current.RecentTrajectory,
+		ChapterLedger: ledger, PreviousChapter: previous, NextChapter: current.Chapter + 1,
+		LengthProgress: lengthProgress{TargetLength: story.LengthGoal(project.LengthProfile), WrittenCharacters: current.WrittenCharacters},
+	}, nil
+}

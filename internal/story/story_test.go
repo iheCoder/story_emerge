@@ -61,6 +61,37 @@ func TestInvalidPatchCannotMutateCommittedState(t *testing.T) {
 	}
 }
 
+func TestRelationshipIntegrityStillRejectsInvalidIDs(t *testing.T) {
+	// 场景：取消参与者人数限制后，关系仍可能包含悬空引用、重复引用或重复条目 ID。
+	// 预期：只放宽人数，不放宽结构完整性；每个场景从独立的合法单参与者状态开始。
+	for _, scenario := range []string{"未知人物引用", "重复人物引用", "重复关系ID", "重复人物ID"} {
+		t.Run(scenario, func(t *testing.T) {
+			state := CurrentStoryState{
+				Characters:    []CharacterState{{ID: "a", Name: "甲"}},
+				Relationships: []RelationshipState{{ID: "r", Characters: []string{"a"}, Description: "甲开始信任夜班保安"}},
+			}
+			if err := ValidateStoryState(state); err != nil {
+				t.Fatalf("合法前置状态被拒绝: %v", err)
+			}
+
+			// 每次只破坏一种 ID 约束，防止其他错误掩盖被测规则是否仍然生效。
+			switch scenario {
+			case "未知人物引用":
+				state.Relationships[0].Characters = []string{"missing"}
+			case "重复人物引用":
+				state.Relationships[0].Characters = []string{"a", "a"}
+			case "重复关系ID":
+				state.Relationships = append(state.Relationships, state.Relationships[0])
+			case "重复人物ID":
+				state.Characters = append(state.Characters, state.Characters[0])
+			}
+			if err := ValidateStoryState(state); err == nil {
+				t.Fatal("无效 ID 被接受")
+			}
+		})
+	}
+}
+
 func TestQuietChaptersKeepFactsAndRollTrajectory(t *testing.T) {
 	// 场景：连续七章只承担情绪/日常功能，没有事实补丁。
 	// 预期：空补丁合法；只留最后五章轨迹；字数再多也不自行完结。

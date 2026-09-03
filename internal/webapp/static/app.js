@@ -10,7 +10,7 @@ const elements = {
   createButton: document.querySelector("#create-button"),
   quietStatus: document.querySelector("#quiet-status"),
   chapterOrbit: document.querySelector("#chapter-orbit"),
-  previewDecision: document.querySelector("#preview-decision"),
+  growthActions: document.querySelector("#growth-actions"),
   spineList: document.querySelector("#spine-list"),
 };
 
@@ -22,6 +22,8 @@ const state = {
   pollTimer: null,
   toastTimer: null,
   coreFrame: null,
+  // POST 返回之前就锁住入口，防止快速连点；服务端还会用任务锁拒绝其他页面的重复启动。
+  growthPending: false,
 };
 
 bindEvents();
@@ -220,7 +222,13 @@ function renderStory(story) {
   document.querySelector("#story-logline").textContent = story.logline || "人物、记忆与命运正在寻找彼此的位置。";
   document.querySelector("#genesis-status-text").textContent = story.phase;
   document.querySelector("#spine-title").textContent = story.title || "故事章节";
-  elements.previewDecision.hidden = story.current_chapter < 3 || story.running || isComplete(story);
+
+  // 只看是否已初始化、未完结且没有运行任务；前三章失败和重启后的 ready 都能继续。
+  elements.growthActions.hidden = !canGrow(story);
+  document.querySelector("#complete-story-button").hidden = story.current_chapter < 3;
+
+  // 轮询收到了失败或完成状态时，页头也要同步，不能在按钮已恢复后仍显示“故事生长中”。
+  if (views.genesis.classList.contains("is-active")) elements.quietStatus.textContent = viewStatus("genesis");
   renderChapterOrbit(story);
   renderSpine(story);
   if (state.currentChapter) renderReaderNavigation(story);
@@ -317,7 +325,8 @@ function renderReaderNavigation(story) {
 
 function renderLatestChapterAction(story, generate, ending, hasNext) {
   const atLatest = state.currentChapter === story.current_chapter;
-  const canGenerate = atLatest && story.current_chapter >= 3 && !story.running && !isComplete(story);
+  // 最新已提交章节末尾与故事页使用相同条件，第二章读完也可以继续生长第三章。
+  const canGenerate = atLatest && canGrow(story);
   generate.hidden = !canGenerate;
   ending.hidden = !(atLatest && !canGenerate && !hasNext);
   if (ending.hidden) return;
@@ -333,7 +342,7 @@ function renderReaderProgress(story) {
 }
 
 async function generateNextChapter() {
-  await continueStory("next", "下一章开始形成。", true);
+  await continueStory("next", "故事正在继续生长。", true);
 }
 
 async function completeStory() {
@@ -341,6 +350,9 @@ async function completeStory() {
 }
 
 async function continueStory(action, message, returnToStory) {
+  // 不等待轮询发现 running 才禁止点击；请求失败后释放入口，用户仍能再次继续生长。
+  if (state.growthPending || !canGrow(state.story)) return;
+  setGrowthPending(true);
   try {
     await api(`/api/stories/${encodeURIComponent(state.storyId)}/${action}`, { method: "POST" });
     showToast(message);
@@ -349,6 +361,16 @@ async function continueStory(action, message, returnToStory) {
     if (returnToStory) navigate(`story/${state.storyId}`);
   } catch (error) {
     showToast(error.message);
+  } finally {
+    setGrowthPending(false);
+  }
+}
+
+// 两个逐章入口和全书入口共用提交锁，避免同一页面同时发起不同类型的生成请求。
+function setGrowthPending(pending) {
+  state.growthPending = pending;
+  for (const id of ["next-chapter-button", "reader-generate-next", "complete-story-button"]) {
+    document.querySelector(`#${id}`).disabled = pending;
   }
 }
 
@@ -400,6 +422,12 @@ function chapterAt(story, number) {
 
 function isComplete(story) {
   return story.story_status === "completed";
+}
+
+// story_status 来自正式检查点：ongoing 也包括初始化完成但尚未提交正文的第 0 章。
+// 不依赖内存中的 failed 标记，刷新和服务重启不会丢失继续生长的资格。
+function canGrow(story) {
+  return story?.story_status === "ongoing" && !story.running;
 }
 
 function lengthLabel(length) {

@@ -248,6 +248,8 @@ func TestCommitFailureCanResumeFromUnchangedCheckpoint(t *testing.T) {
 	fake.failures["chapter_001_commit"] = errors.New("提取失败")
 	engine, files := initializeTest(t, fake)
 	before, _ := os.ReadFile(filepath.Join(files.Root(), "story-core.json"))
+
+	// 失败时保留第 0 章状态；ACCEPT 不能提前计入字数、推进章号或标记完结。
 	if err := engine.Run(context.Background(), 1); err == nil {
 		t.Fatal("提取失败却通过")
 	}

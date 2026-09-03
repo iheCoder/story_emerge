@@ -20,7 +20,9 @@ Planner 决定值得产生的叙事效果，Writer 自由创造实现路径，Ed
 
 浏览器打开 `http://127.0.0.1:8787`，填写故事想法和篇幅。原始输入完整保存；Writer 不读取 User Idea。
 
-Web 提供最多三章试读，已提交章节立即可读；之后可以续写下一章或持续生成到正式完结。短篇提前完成时按实际结果显示。
+Web 首次提供最多三章试读，已提交章节立即可读。只要已经初始化、尚未完结且没有正在运行的任务，故事页和最新章节末尾就提供“继续生长”，每次生成下一章；前三章中断后、刷新或服务重启后同样可用。三章之后还可选择持续生成到正式完结，短篇提前完成时按实际结果显示。
+
+继续生长以最后一份正式 HEAD 为起点，保留已提交章节。未提交章节从 Planner 开始生成，不复用中断前的计划、草稿或评审；本次不提供各阶段的独立恢复。
 
     go run ./cmd/story-emerge serve --config config.yaml --addr 127.0.0.1:8787
     go run ./cmd/story-emerge run --project novels/demo --chapters 3
@@ -32,6 +34,24 @@ Web 提供最多三章试读，已提交章节立即可读；之后可以续写�
 ## 数据与模型配置
 
 `config.yaml` 中的 providers 保存连接信息，roles 分别选择模型；配置不进入小说目录。真实配置已被 `.gitignore` 排除。配置改变后重启 Web，CLI 下一次运行会重新读取。
+
+每个角色还可配置 `reasoning_effort` 和 `max_output_tokens`。省略时使用下表默认值；显式输出上限必须大于 0。可用推理档位为 none/minimal/low/medium/high/xhigh/max，具体模型需支持所选档位。
+
+| 角色 | reasoning_effort | max_output_tokens |
+|---|---|---:|
+| architect | low | 16000 |
+| planner | low | 6000 |
+| writer | none | 12000 |
+| editor | low | 6000 |
+| commit | none | 24000 |
+
+    commit:
+      provider: deepseek
+      model: deepseek-v4-flash
+      reasoning_effort: none
+      max_output_tokens: 24000
+
+正常生成采用角色配置；格式修复仍明确使用 none，并沿用该角色的输出上限。运行日志记录实际生效的参数。
 
     novels/<name>/
     ├── project.json         原始 User Idea、书名、篇幅档位、调用预算
