@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -158,7 +159,7 @@ func (store *Store) LoadLedger() ([]story.LedgerEntry, error) {
 }
 
 // CommitChapter 自行从 HEAD 计算下一份状态，调用者不能传入一个与补丁不一致的快照。
-// 任一文件写入失败时旧 HEAD 保持不变，下次可以从旧检查点重新生成这一章。
+// 任一文件写入失败时旧 HEAD 保持不变，工作流下次可从验收恢复点重试 Commit。
 func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (story.State, error) {
 	current, err := store.LoadState()
 	if err != nil {
@@ -275,6 +276,12 @@ func (store *Store) readJSON(relative string, target any) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("解析 %s 失败: %w", relative, err)
+	}
+
+	// Decode 一次只消费一个 JSON 值；再读一次确认已到文件结尾，拒绝追加对象或尾部垃圾。
+	// 尤其不能让验收恢复点的前半段解析成功，就掩盖磁盘文件实际已经损坏的事实。
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return fmt.Errorf("解析 %s 失败: JSON 后存在多余内容", relative)
 	}
 	return nil
 }

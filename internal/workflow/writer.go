@@ -7,17 +7,22 @@ import (
 	"strings"
 )
 
+// writeDraft 将已确定的章节意图写成初稿；只接收 Writer 专用上下文，其中不含 User Idea。
 func (engine *Engine) writeDraft(ctx context.Context, input writerContext, attempt int) (string, error) {
+	// 序列化专用类型，防止后续扩展 Planner 或 Editor 上下文时意外扩大 Writer 可见范围。
 	text, err := asPrettyJSON(input)
 	if err != nil {
 		return "", err
 	}
-	chapter, err := generateText(ctx, engine, chapterStage(input.NextChapter, "write", attempt), llm.RoleWriter, "writer", text, 12000, 0.95)
+
+	// 初稿使用较高温度保留创作空间；生成后只归一化标题格式，不在代码里改写情节。
+	chapter, err := generateText(ctx, engine, chapterStage(input.NextChapter, "write", attempt), llm.RoleWriter, "writer", text, 0.95)
 	return normalizeChapterHeading(chapter), err
 }
 
 // 修订只携带相同的 Writer 白名单、当前草稿与阻断问题，不泄露 Editor 的完整输入。
 func (engine *Engine) reviseDraft(ctx context.Context, input writerContext, chapter string, issues []string, attempt, revision int) (string, error) {
+	// 只增加待改正文和阻断问题，不把 Editor 的完整上下文传给 Writer。
 	text, err := asPrettyJSON(struct {
 		Context        writerContext `json:"context"`
 		CurrentDraft   string        `json:"current_draft"`
@@ -26,7 +31,9 @@ func (engine *Engine) reviseDraft(ctx context.Context, input writerContext, chap
 	if err != nil {
 		return "", err
 	}
-	result, err := generateText(ctx, engine, chapterStage(input.NextChapter, "revise", attempt, revision), llm.RoleWriter, "writer_revision", text, 12000, 0.80)
+
+	// 修订沿用同一角色配置，温度稍低以聚焦已有问题；改完仍须重新经过 Editor 验收。
+	result, err := generateText(ctx, engine, chapterStage(input.NextChapter, "revise", attempt, revision), llm.RoleWriter, "writer_revision", text, 0.80)
 	return normalizeChapterHeading(result), err
 }
 

@@ -21,7 +21,10 @@ type editorInput struct {
 	ChapterLedger     []story.LedgerEntry     `json:"chapter_ledger"`
 }
 
+// reviewDraft 评价某一版正文，返回 ACCEPT、REVISE 或 REPLAN；它本身不修改正式状态。
 func (engine *Engine) reviewDraft(ctx context.Context, base plannerInput, direction story.Direction, intent story.ChapterIntent, chapter string, attempt, draft int) (story.EditorDecision, error) {
+	// Editor 需要对照用户要求与历史评审正文；候选方向取本轮 Planner 的结果，而非旧方向。
+	// 输入独立组装，不把规划反馈等额外信息随整个 base 一起透传。
 	input, err := asPrettyJSON(editorInput{
 		UserIdea: base.UserIdea, StoryCore: base.StoryCore, CurrentStoryState: base.CurrentStoryState,
 		CurrentDirection: direction, RecentTrajectory: base.RecentTrajectory, ChapterIntent: intent,
@@ -30,11 +33,16 @@ func (engine *Engine) reviewDraft(ctx context.Context, base plannerInput, direct
 	if err != nil {
 		return story.EditorDecision{}, err
 	}
+
+	// 规划尝试和草稿版本都进入阶段名，使评审结论能对应到具体正文版本。
 	stage := chapterStage(base.NextChapter, "editor", attempt, draft)
-	decision, err := generateJSON[story.EditorDecision](ctx, engine, stage, llm.RoleEditor, "editor", "editor_decision", input, 6000, "low")
+	decision, err := generateJSON[story.EditorDecision](ctx, engine, stage, llm.RoleEditor, "editor", "editor_decision", input)
 	if err != nil {
 		return decision, err
 	}
+
+	// 单份评审文件只是诊断材料；只有主流程把 ACCEPT 与正文共同保存，才形成恢复点。
+	// 先落盘再做领域检查，便于定位非法动作或不完整的评审内容。
 	if err := engine.store.SaveWorking(base.NextChapter, stage+".json", decision); err != nil {
 		return decision, err
 	}

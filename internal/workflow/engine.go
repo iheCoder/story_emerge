@@ -28,7 +28,7 @@ type Event struct {
 type Reporter func(Event)
 
 // Engine 串联 Planner -> Writer -> Editor -> Commit 的章节循环。
-// usedCalls 从 usage.jsonl 恢复，maxCalls 在整个项目生命周期内生效而非仅限当前进程。
+// usedCalls 从 usage.jsonl 恢复成功调用数；本进程中的失败调用也占额度，但不写入该文件。
 type Engine struct {
 	generator llm.Generator
 	store     *store.Store
@@ -37,10 +37,9 @@ type Engine struct {
 	usedCalls int
 }
 
+// New 组装工作流并恢复已记录的成功调用数，避免重启把这部分项目预算清零。
 func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Reporter) (*Engine, error) {
-	// 构造时恢复历史调用计数，使重启不会重置预算；文件统计失败则拒绝启动，
-	// 因为在未知成本下继续生成可能超出用户设定。
-	// 恢复已有成功调用数，保证重启不重置项目预算。
+	// 预算必须为正；历史用量统计失败就拒绝启动，不能在不知道已用额度时继续生成。
 	if maxCalls < 1 {
 		return nil, fmt.Errorf("模型调用预算必须大于 0")
 	}
@@ -68,9 +67,23 @@ func (engine *Engine) emit(stage, message string, attrs ...slog.Attr) {
 
 // generate 统一执行预算检查、调用和用量落盘，避免某个新增阶段绕过成本控制。
 func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Result, error) {
-	// 预算检查发生在调用前；计数在发起请求前递增，保守地把失败尝试也视为已占用的逻辑槽位，
-	// 防止瞬时故障下的重试/重启绕过成本护栏。成功结果才由 store 记入 usage.jsonl。
-	// 在发起请求前检查并占用一个逻辑调用槽位。
+	// 先解析角色参数，再记录日志和占用调用预算。配置错误不会被误记为一次模型调用。
+	// 生产 RoleClient 提供 YAML 参数解析；没有该能力的测试生成器使用同一组内置默认值。
+	// 保持 Generator 接口只负责生成，不要求每个替身都实现配置解析。
+	if resolver, ok := engine.generator.(interface {
+		ResolveRequest(llm.Request) (llm.Request, error)
+	}); ok {
+		var err error
+		request, err = resolver.ResolveRequest(request)
+		if err != nil {
+			return llm.Result{}, err
+		}
+	} else {
+		request = llm.WithRoleDefaults(request)
+	}
+
+	// 先检查取消和项目调用额度，再占用一个逻辑调用槽位。
+	// 当前进程中失败尝试也计数；只有成功结果写入 usage.jsonl，重启不会恢复失败计数。
 	if err := ctx.Err(); err != nil {
 		return llm.Result{}, err
 	}
@@ -78,9 +91,13 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 		return llm.Result{}, fmt.Errorf("已达到模型调用上限 %d", engine.maxCalls)
 	}
 	engine.usedCalls++
+
+	// 日志记录解析后的实际参数：max_calls 限制调用次数，max_output_tokens 限制单次输出。
+	// 两者是不同的预算，便于区分“项目额度耗尽”和“单次模型响应被截断”。
 	engine.emit(request.Stage, "正在调用模型",
 		slog.String("role", request.Role), slog.Int("call", engine.usedCalls),
-		slog.Int("max_calls", engine.maxCalls), slog.Int("max_output_tokens", request.MaxOutputTokens))
+		slog.Int("max_calls", engine.maxCalls), slog.Int("max_output_tokens", request.MaxOutputTokens),
+		slog.String("reasoning_effort", request.ReasoningEffort))
 
 	// 调用具体模型实现；错误带上阶段名后返回。
 	started := time.Now()
@@ -120,9 +137,8 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 
 // loadPromptAndSchema 同时加载角色指令和结构化输出 Schema。
 func loadPromptAndSchema(templateName, schemaName string) (string, map[string]any, error) {
-	// Prompt 与 Schema 都从 embed 资源读取，启动时校验其存在和 JSON 合法性，
-	// 避免运行到中途才发现部署缺少模板。
-	// 读取角色 Prompt。
+	// Prompt 与 Schema 都从 embed 资源读取；每次构造角色请求时检查资源和 JSON 格式。
+	// 模板缺失时直接返回本地错误，不发起模型调用。
 	instructions, err := prompts.Template(templateName)
 	if err != nil {
 		return "", nil, fmt.Errorf("读取 Prompt %s 失败: %w", templateName, err)
@@ -144,7 +160,6 @@ func loadPromptAndSchema(templateName, schemaName string) (string, map[string]an
 func decodeStructured[T any](text string) (T, error) {
 	// 模型偶尔会包裹 Markdown 代码围栏；这里只做可解释的外层清理，
 	// 不尝试猜测或补写业务字段；仅语法与类型问题允许一次独立的格式修复。
-	// 去除模型可能添加的 Markdown 代码围栏。
 	var target T
 	cleaned := cleanJSON(text)
 
@@ -175,21 +190,20 @@ func generateJSON[T any](
 	ctx context.Context,
 	engine *Engine,
 	stage, role, templateName, schemaName, input string,
-	maxTokens int,
-	reasoning string,
 ) (T, error) {
 	// 结构化阶段最多经历“正常生成 -> JSON 解码 -> 一次格式修复”三步。
 	// 修复仍受同一 maxCalls 预算约束，第二次失败直接终止，不无限循环消耗额度。
-	// 加载 Prompt/Schema，并构造结构化请求。
 	var zero T
 	instructions, schema, err := loadPromptAndSchema(templateName, schemaName)
 	if err != nil {
 		return zero, err
 	}
+
+	// 普通业务请求只声明角色和输出结构，思考强度、输出上限由统一入口解析角色配置。
+	// 这样调大 Commit 上限只需改 YAML，不必逐一修改业务阶段和格式修复代码。
 	request := llm.Request{
 		Stage: stage, Role: role, Instructions: instructions, Input: input,
 		SchemaName: schemaName, Schema: schema,
-		MaxOutputTokens: maxTokens, ReasoningEffort: reasoning,
 	}
 
 	// 执行正常结构化生成并尝试解码。
@@ -210,7 +224,6 @@ func generateJSON[T any](
 	}
 
 	// 先保存坏原文再修复，保证即使修复请求也失败，人工仍能看到模型真实返回。
-	// 保存坏原文，保留人工诊断证据。
 	if err := engine.saveMalformedOutput(stage, result.Text); err != nil {
 		return zero, err
 	}
@@ -250,10 +263,13 @@ func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request ll
 	return decoded, nil
 }
 
+// jsonRepairRequest 保留原角色和 Schema，只把任务收窄为修复已有答案的格式。
 func jsonRepairRequest(request llm.Request, malformed string, decodeErr error) llm.Request {
 	request.Stage += "_format_repair"
 	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法和字段类型；不得补写原答案没有的业务信息，使输出严格符合随请求提供的 Schema。只返回 JSON。"
 	request.Input = "解析错误：\n" + decodeErr.Error() + "\n\n修复下面的 JSON：\n\n" + malformed
+
+	// 格式修复不需要重新推演故事；显式 none 优先于角色配置，输出上限仍沿用原请求规则。
 	request.ReasoningEffort = "none"
 
 	return request
@@ -290,20 +306,19 @@ func generateText(
 	ctx context.Context,
 	engine *Engine,
 	stage, role, templateName, input string,
-	maxTokens int,
 	temperature float64,
 ) (string, error) {
-	// 纯文本阶段不需要 Schema，但仍复用 generate 的预算、超时、重试和用量记录机制。
-	// 读取纯文本角色 Prompt。
+	// 纯文本阶段不需要 Schema；只加载对应正文任务的 Prompt，调用仍走统一入口。
 	instructions, err := prompts.Template(templateName)
 	if err != nil {
 		return "", err
 	}
 
-	// 复用统一预算/重试/用量链路生成正文。
+	// 温度由初稿或修订任务指定；思考强度与输出上限统一读取 Writer 角色配置。
+	// 预算、用量记录由 Engine 处理，生产客户端负责网络超时和有限重试。
 	result, err := engine.generate(ctx, llm.Request{
 		Stage: stage, Role: role, Instructions: instructions, Input: input,
-		MaxOutputTokens: maxTokens, ReasoningEffort: "none", Temperature: &temperature,
+		Temperature: &temperature,
 	})
 	if err != nil {
 		return "", err

@@ -57,3 +57,39 @@ func TestRoleClientRejectsMissingRole(t *testing.T) {
 		t.Fatalf("未拒绝空角色请求: %v", err)
 	}
 }
+
+// 验证角色参数最终进入 HTTP 请求体，避免配置解析正确但发送时仍使用硬编码值。
+func TestRoleGenerationSettingsAppearInActualHTTPBody(t *testing.T) {
+	// Commit 显式配置 32000/high，刻意与内置默认值不同，便于发现参数被覆盖或丢失。
+	client, err := NewRoleClient(map[string]Config{
+		RoleCommit: {Model: "model", Endpoint: "https://example.test", APIKey: "secret", MaxOutputTokens: 32000, ReasoningEffort: "high"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 普通请求省略强度，应继承 high；格式修复显式 none，则必须覆盖角色配置。
+	for _, effort := range []string{"", "none"} {
+		want := effort
+		if want == "" {
+			want = "high"
+		}
+
+		// 在 HTTP 传输边界截获序列化后的请求，不访问真实服务，也不只断言内存配置对象。
+		client.clients[RoleCommit].http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			var payload responseRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.MaxOutputTokens != 32000 || payload.Reasoning == nil || payload.Reasoning.Effort != want {
+				t.Fatalf("实际请求未采用参数: %#v", payload)
+			}
+			return jsonHTTPResponse(http.StatusOK, successResponse), nil
+		})
+
+		// 请求不传输出上限，两种强度场景都应使用角色配置的 32000。
+		if _, err := client.Generate(context.Background(), Request{Role: RoleCommit, Stage: "commit", ReasoningEffort: effort}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

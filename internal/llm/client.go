@@ -18,14 +18,16 @@ import (
 // 模型网关可能返回很长的 HTML/调试文本；截断它既保护日志可读性，也避免异常响应占用过多内存。
 const maxErrorBodyBytes = 8 << 10
 
-// Config 描述一个角色调用模型所需的连接信息。
+// Config 描述一个角色调用模型所需的连接信息与生成参数默认值。
 // APIKey 只在内存中使用，不会被序列化到小说项目文件。
 type Config struct {
-	Provider string        // 供应商标识，用于日志和诊断。
-	Model    string        // 实际请求使用的模型名。
-	Endpoint string        // Responses API 端点，可被本地代理覆盖。
-	APIKey   string        // 仅内存持有的密钥，不写入项目文件。
-	Timeout  time.Duration // 单次 HTTP 请求超时。
+	Provider        string        // 供应商标识，用于日志和诊断。
+	Model           string        // 实际请求使用的模型名。
+	Endpoint        string        // Responses API 端点，可被本地代理覆盖。
+	APIKey          string        // 仅内存持有的密钥，不写入项目文件。
+	Timeout         time.Duration // 单次 HTTP 请求超时。
+	ReasoningEffort string        // 角色默认推理强度，空值使用角色默认值。
+	MaxOutputTokens int           // 角色输出上限，0 使用角色默认值。
 }
 
 // Request 是业务阶段对模型客户端的最小请求契约。
@@ -37,12 +39,13 @@ type Request struct {
 	Input           string         // 本阶段结构化上下文或正文输入。
 	SchemaName      string         // JSON Schema 名称；Schema 为空时不发送。
 	Schema          map[string]any // 严格结构化输出契约。
-	MaxOutputTokens int            // 单次响应的成本/截断护栏。
-	ReasoningEffort string         // 可选推理强度。
+	MaxOutputTokens int            // 单次输出上限；0 留给 RoleClient 补角色配置或默认值。
+	ReasoningEffort string         // 空值继承角色配置；none 显式关闭思考，优先于角色配置。
 	Temperature     *float64       // 可选采样温度；nil 表示交给服务端默认。
 }
 
-// Result 是模型调用成功后的统一结果，供工作流保存正文、解析结构化数据和记录用量。
+// Result 携带模型返回的文本与元数据；响应不完整时也可能与错误一起返回，供诊断使用。
+// 调用方必须先检查错误，不能因 Text 非空就把不完整内容当成成功结果提交。
 // Duration 只用于观测，不参与故事决策。
 type Result struct {
 	Text       string        // 拼接后的 output_text。
@@ -61,7 +64,7 @@ type Usage struct {
 }
 
 // Generator 是 Engine 依赖的窄接口。
-// 生产环境使用 Client，测试则可注入按阶段返回固定结果的 fake，避免测试依赖网络。
+// 生产环境使用 RoleClient 路由到各角色的 Client，测试可注入固定结果，避免依赖网络。
 type Generator interface {
 	Generate(context.Context, Request) (Result, error)
 }
@@ -127,9 +130,8 @@ func (err redactedError) Unwrap() error { return err.cause }
 
 // buildRequest 将业务请求编码成 Responses API JSON，不执行网络 IO。
 func (client *Client) buildRequest(request Request) ([]byte, error) {
-	// Responses API 的公共字段在此集中组装；可选推理、温度和 JSON Schema
-	// 只在调用阶段明确要求时写入，避免不同阶段共享隐式参数。
-	// 填充所有阶段共有的请求字段。
+	// 角色配置与阶段显式参数已经由上层解析完毕，此处只把最终请求翻译为协议字段。
+	// 不再次读取 Config 中的生成默认值，避免覆盖格式修复等任务的显式要求。
 	payload := responseRequest{
 		Model:           client.config.Model,
 		Instructions:    request.Instructions,
@@ -138,7 +140,7 @@ func (client *Client) buildRequest(request Request) ([]byte, error) {
 		Store:           false,
 	}
 
-	// 仅附加调用方明确要求的可选参数，避免阶段之间共享隐式配置。
+	// 可选字段按最终请求决定是否发送；none 必须照常发送，它表示关闭而非省略推理设置。
 	if request.ReasoningEffort != "" {
 		payload.Reasoning = &reasoningConfig{Effort: request.ReasoningEffort}
 	}
