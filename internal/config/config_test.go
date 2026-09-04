@@ -58,6 +58,36 @@ roles:
 	}
 }
 
+func TestLoadAllowsOptionalUnwiredDirectorRole(t *testing.T) {
+	// 场景：用户希望单独试验已经实现的 Story Director，但生产章节循环仍只要求原有五个角色。
+	// 预期：配置层识别 director 并建立独立模型绑定；没有 director 的旧配置仍由上一个测试证明可正常加载。
+	path := writeConfig(t, `
+providers:
+  test:
+    api_key: secret
+    endpoint: https://example.test/responses
+roles:
+  architect: {provider: test, model: architect-model}
+  planner: {provider: test, model: planner-model}
+  director: {provider: test, model: director-model}
+  writer: {provider: test, model: writer-model}
+  editor: {provider: test, model: editor-model}
+  commit: {provider: test, model: commit-model}
+`)
+
+	settings, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configs, err := settings.RoleConfigs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := configs[llm.RoleDirector]; got.Model != "director-model" || got.Provider != "test" {
+		t.Fatalf("Director 没有获得独立模型绑定: %#v", got)
+	}
+}
+
 func TestLoadRejectsUnknownFieldsAndMissingRequiredRoles(t *testing.T) {
 	// 场景：配置文件出现拼写错误，或漏掉工作流必须使用的 Commit 角色。
 	// 预期：启动前失败，避免程序静默使用零值或把错误配置带到模型调用阶段。

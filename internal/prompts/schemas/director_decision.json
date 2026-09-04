@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "KEEP",
+        "ADJUST",
+        "REPLACE"
+      ]
+    },
+    "direction": {
+      "type": "object",
+      "properties": {
+        "focus": {
+          "type": "string"
+        },
+        "desired_shift": {
+          "type": "string"
+        },
+        "reader_expectation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "focus",
+        "desired_shift",
+        "reader_expectation"
+      ],
+      "additionalProperties": false
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "direction",
+    "reason"
+  ],
+  "additionalProperties": false
+}

@@ -2,13 +2,14 @@ package prompts
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
 func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
-	// 场景：新架构发布时只应携带当前可执行的角色与契约。
-	// 预期：旧 Reader/Arc/Finalize 入口完全消失，避免被后续代码意外调用。
-	for _, name := range []string{"architect", "planner", "writer", "writer_revision", "editor", "commit"} {
+	// 场景：二进制应携带当前生产角色，以及已经实现但尚未接线的 Story Director 契约。
+	// 预期：Director 可以被独立调用；旧 Reader/Arc/Finalize 入口完全消失，避免被后续代码意外调用。
+	for _, name := range []string{"architect", "planner", "director", "writer", "writer_revision", "editor", "commit"} {
 		if _, err := Template(name); err != nil {
 			t.Fatal(err)
 		}
@@ -18,7 +19,7 @@ func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
 			t.Fatalf("旧角色仍嵌入: %s", name)
 		}
 	}
-	for _, name := range []string{"genesis", "chapter_plan", "editor_decision", "chapter_commit"} {
+	for _, name := range []string{"genesis", "chapter_plan", "director_decision", "editor_decision", "chapter_commit"} {
 		data, err := Schema(name)
 		if err != nil {
 			t.Fatal(err)
@@ -28,6 +29,30 @@ func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertStrictObjects(t, name, value)
+	}
+}
+
+func TestDirectorContractHasNoStoryStatusOrChapterPlan(t *testing.T) {
+	// 场景：Story Director 只是预备的阶段方向维护者，不能提前取得完结判断或逐章规划职责。
+	// 预期：Prompt 与 Schema 都不存在 story_status，且 Prompt 明确禁止生成下一章计划和具体事件。
+	template, err := Template("director")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := Schema("director_decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for source, content := range map[string]string{"Prompt": template, "Schema": string(schema)} {
+		if strings.Contains(strings.ToLower(content), "story_status") {
+			t.Fatalf("Director %s 仍包含 story_status", source)
+		}
+	}
+	for _, guardrail := range []string{"默认优先 KEEP", "不负责决定下一章具体发生什么", "reader_expectation"} {
+		if !strings.Contains(template, guardrail) {
+			t.Fatalf("Director Prompt 缺少关键约束: %s", guardrail)
+		}
 	}
 }
 

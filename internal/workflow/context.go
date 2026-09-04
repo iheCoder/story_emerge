@@ -13,7 +13,7 @@ type writerContext struct {
 	NextChapter       int                     `json:"next_chapter"`
 }
 
-// lengthProgress 只给负责全局取舍的 Planner 和负责完结确认的 Editor。
+// lengthProgress 只给负责全局取舍的 Planner、预备 Director 和负责完结确认的 Editor。
 // TargetLength 为软目标；WrittenCharacters 来自已提交正文，不含任何未通过草稿。
 type lengthProgress struct {
 	TargetLength      string `json:"target_length"`

@@ -10,6 +10,8 @@
 
 Planner 决定值得产生的叙事效果，Writer 自由创造实现路径，Editor 决定正文准入与完结，Commit 只提取已接受正文。没有 Reader、固定 Outline、Live Tension 或自动接受兜底。
 
+仓库同时预置了一个尚未接入上述生产链的 Story Director：它可以独立审查跨越若干章节的 Current Direction，并返回 KEEP / ADJUST / REPLACE。当前没有章节流程调用它，也没有改变 Planner、Writer、Editor 的输入或职责；其输出不包含 `story_status`，完结权仍只属于 Editor。
+
 ## 启动
 
 `go.mod` 声明 Go 1.27。配置五个模型职责后启动：
@@ -41,6 +43,7 @@ Web 首次提供最多三章试读，已提交章节立即可读。只要已经�
 |---|---|---:|
 | architect | low | 16000 |
 | planner | low | 6000 |
+| director（预备，未接线） | low | 6000 |
 | writer | none | 12000 |
 | editor | low | 6000 |
 | commit | none | 24000 |

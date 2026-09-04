@@ -58,6 +58,15 @@ func TestRoleClientRejectsMissingRole(t *testing.T) {
 	}
 }
 
+func TestDirectorUsesStageReasoningDefaults(t *testing.T) {
+	// 场景：预备 Director 通过普通测试生成器独立调用，没有生产 RoleClient 解析 YAML 参数。
+	// 预期：它采用与其他结构化判断角色一致的低强度推理和 6000 输出上限。
+	request := WithRoleDefaults(Request{Role: RoleDirector})
+	if request.ReasoningEffort != "low" || request.MaxOutputTokens != 6000 {
+		t.Fatalf("Director 默认生成参数错误: %#v", request)
+	}
+}
+
 // 验证角色参数最终进入 HTTP 请求体，避免配置解析正确但发送时仍使用硬编码值。
 func TestRoleGenerationSettingsAppearInActualHTTPBody(t *testing.T) {
 	// Commit 显式配置 32000/high，刻意与内置默认值不同，便于发现参数被覆盖或丢失。

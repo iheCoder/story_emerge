@@ -12,6 +12,7 @@ const (
 	RoleWriter    = "writer"
 	RoleEditor    = "editor"
 	RolePlanner   = "planner"
+	RoleDirector  = "director"
 	RoleCommit    = "commit"
 )
 
@@ -98,7 +99,7 @@ func WithRoleDefaults(request Request) Request {
 		switch request.Role {
 		case RoleArchitect:
 			request.MaxOutputTokens = 16000
-		case RolePlanner, RoleEditor:
+		case RolePlanner, RoleDirector, RoleEditor:
 			request.MaxOutputTokens = 6000
 		case RoleWriter:
 			request.MaxOutputTokens = 12000

@@ -24,6 +24,12 @@
 
 修订 Writer 使用相同输入白名单，额外接收当前草稿和最多三个阻断问题。它不会收到 Editor 的完整输入。每个模型职责可独立配置供应商和模型。
 
+### 预备但未接线的 Story Director
+
+代码库已经提供 Story Director 的 Prompt、严格输出 Schema、领域校验和独立生成方法，用于审查未来若干章节共同遵循的阶段方向。它只返回 KEEP / ADJUST / REPLACE、三字段 Direction（focus、desired_shift、reader_expectation）和审计原因；不规划下一章具体事件，也不输出 `story_status`。
+
+该组件当前没有生产调用方。章节循环仍是 Planner → Writer → Editor → Commit，Planner 仍维护现行两字段 Direction，Writer 和 Editor 的输入没有变化，只有 Editor 可以确认完结。Director 的模型配置因此可选，未配置时不影响现有启动和写作流程；触发时机、Direction 提交边界及其他角色如何消费其结果留到真正接线时再设计。
+
 推理强度和输出上限同样按角色配置，正常生成的预算不再散落在业务方法中。Commit 默认 reasoning_effort=none、max_output_tokens=24000；其余角色默认值见 README。格式修复明确关闭思考，并使用原角色的输出上限。Engine 在日志记录及请求发出之前解析最终参数。
 
 ## 每章的决策循环

@@ -70,8 +70,27 @@ type RelationshipState struct {
 	Description string   `json:"description"`
 }
 type Direction struct {
-	Focus        string `json:"focus"`
-	DesiredShift string `json:"desired_shift"`
+	Focus             string `json:"focus"`
+	DesiredShift      string `json:"desired_shift"`
+	ReaderExpectation string `json:"reader_expectation,omitempty"`
+}
+
+// DirectorAction 描述 Story Director 对当前阶段方向的处理方式。
+// 它与 Planner 的逐章 KEEP/UPDATE 仍是两套独立契约；当前生产链尚未消费这里的决定。
+type DirectorAction string
+
+const (
+	DirectorKeep    DirectorAction = "KEEP"
+	DirectorAdjust  DirectorAction = "ADJUST"
+	DirectorReplace DirectorAction = "REPLACE"
+)
+
+// DirectorDecision 只维护跨越若干章节的阶段方向。
+// 它没有 story_status，也不携带 Chapter Intent，避免预备组件提前取得完结权或退化为逐章规划器。
+type DirectorDecision struct {
+	Action    DirectorAction `json:"action"`
+	Direction Direction      `json:"direction"`
+	Reason    string         `json:"reason"`
 }
 
 // ChapterIntent 允许人物、认知、情绪和读者体验上的贡献，不把每章任务化。

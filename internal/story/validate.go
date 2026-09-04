@@ -53,6 +53,37 @@ func ValidateDirection(direction Direction) error {
 	}
 	return nil
 }
+
+// ValidateDirectorDecision 校验独立 Story Director 的阶段级输出。
+// 现有 Direction 仍允许没有 reader_expectation，保证尚未接线的组件不改变 Architect/Planner 生产协议；
+// 只有 Director 自己的输出必须补齐读者正在等待的阶段性发展。
+func ValidateDirectorDecision(current Direction, decision DirectorDecision) error {
+	if err := ValidateDirection(decision.Direction); err != nil {
+		return err
+	}
+	if !nonempty(decision.Direction.ReaderExpectation) {
+		return fmt.Errorf("Story Director 缺少阶段级读者期待")
+	}
+	if !nonempty(decision.Reason) {
+		return fmt.Errorf("Story Director 缺少判断依据")
+	}
+
+	// KEEP 的价值是给方向提供跨章惯性，不能借 KEEP 偷偷润色或改写任何字段。
+	// ADJUST/REPLACE 则必须真的产生变化，避免动作名称与实际结果相互矛盾。
+	switch decision.Action {
+	case DirectorKeep:
+		if decision.Direction != current {
+			return fmt.Errorf("Story Director KEEP 必须原样返回当前方向")
+		}
+	case DirectorAdjust, DirectorReplace:
+		if decision.Direction == current {
+			return fmt.Errorf("Story Director %s 没有改变当前方向", decision.Action)
+		}
+	default:
+		return fmt.Errorf("Story Director action 无效: %s", decision.Action)
+	}
+	return nil
+}
 func ValidatePlan(plan ChapterPlan) error {
 	switch plan.DirectionAction {
 	case "KEEP":
