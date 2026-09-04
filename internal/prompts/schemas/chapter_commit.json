@@ -54,22 +54,109 @@
                     "type": "string"
                   },
                   "facts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
+                    "type": "object",
+                    "properties": {
+                      "upsert": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "remove": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "upsert",
+                      "remove"
+                    ],
+                    "additionalProperties": false
                   },
                   "knowledge_and_beliefs": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
+                    "type": "object",
+                    "properties": {
+                      "upsert": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "remove": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "upsert",
+                      "remove"
+                    ],
+                    "additionalProperties": false
                   },
                   "commitments_and_intentions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
+                    "type": "object",
+                    "properties": {
+                      "upsert": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "remove": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "upsert",
+                      "remove"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [

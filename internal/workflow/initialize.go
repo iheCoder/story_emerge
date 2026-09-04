@@ -36,6 +36,13 @@ func (engine *Engine) Initialize(ctx context.Context, project story.Project) (ge
 	if err := engine.store.SaveWorking(0, "genesis.json", genesis); err != nil {
 		return story.Genesis{}, err
 	}
+
+	// Architect 只需要表达初始状态内容，人物内部条目的稳定 ID 由程序统一生成。
+	// 先保存模型原始输出再补 ID，既保留故障证据，也保证正式 checkpoint 从一开始就可被后续 Patch 精确引用。
+	genesis.InitialStoryState, err = story.ResolveInitialStateItemIDs(genesis.InitialStoryState)
+	if err != nil {
+		return story.Genesis{}, err
+	}
 	if err := engine.store.CommitGenesis(genesis); err != nil {
 		return story.Genesis{}, err
 	}

@@ -126,6 +126,17 @@ func ValidateStoryState(state CurrentStoryState) error {
 		if !nonempty(character.ID) || characters[character.ID] || !nonempty(character.Name) {
 			return fmt.Errorf("人物 ID 或姓名无效: %s", character.ID)
 		}
+		// 人物内部状态现在可以逐条更新，因此每条都必须拥有非空且字段内唯一的 ID。
+		// Value 仍是给创作角色阅读的内容；ID 只作为 reducer 的定位键，不能容忍空值或歧义覆盖。
+		if err := validateStateItems(character.ID, "facts", character.Facts); err != nil {
+			return err
+		}
+		if err := validateStateItems(character.ID, "knowledge_and_beliefs", character.KnowledgeAndBeliefs); err != nil {
+			return err
+		}
+		if err := validateStateItems(character.ID, "commitments_and_intentions", character.CommitmentsAndIntentions); err != nil {
+			return err
+		}
 		characters[character.ID] = true
 	}
 	relations := map[string]bool{}
@@ -145,6 +156,17 @@ func ValidateStoryState(state CurrentStoryState) error {
 			}
 			participants[id] = true
 		}
+	}
+	return nil
+}
+
+func validateStateItems(characterID, field string, items []StateItem) error {
+	ids := map[string]bool{}
+	for _, item := range items {
+		if !nonempty(item.ID) || ids[item.ID] || !nonempty(item.Value) {
+			return fmt.Errorf("人物 %s 的 %s 条目 ID 或内容无效: %s", characterID, field, item.ID)
+		}
+		ids[item.ID] = true
 	}
 	return nil
 }

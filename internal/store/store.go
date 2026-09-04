@@ -60,6 +60,15 @@ func (store *Store) CommitGenesis(genesis story.Genesis) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+
+	// 存储层也执行一次幂等归一化，保证绕过 workflow 的调用仍不会写出无 ID 的人物状态。
+	// 已经解析过的 ID 会保持不变，因此 workflow 保存的结果与最终 checkpoint 完全一致。
+	initial, err := story.ResolveInitialStateItemIDs(genesis.InitialStoryState)
+	if err != nil {
+		return err
+	}
+	genesis.InitialStoryState = initial
+
 	if err := story.ValidateGenesis(genesis); err != nil {
 		return err
 	}
@@ -162,6 +171,13 @@ func (store *Store) LoadLedger() ([]story.LedgerEntry, error) {
 // 任一文件写入失败时旧 HEAD 保持不变，工作流下次从正式历史生成尚未提交的章节。
 func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (story.State, error) {
 	current, err := store.LoadState()
+	if err != nil {
+		return story.State{}, err
+	}
+
+	// commit.json 是 checkpoint 的可重放依据，必须保存已经补全稳定 ID 的原子 Patch。
+	// 这层防御使直接调用 Store 的代码与正常 workflow 采用完全相同的 reducer 输入。
+	commit.Result.StatePatch, err = story.ResolveStatePatchIDs(current.Story, commit.Result.StatePatch)
 	if err != nil {
 		return story.State{}, err
 	}

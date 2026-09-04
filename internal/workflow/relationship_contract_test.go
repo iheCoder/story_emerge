@@ -35,10 +35,18 @@ func TestSingleParticipantRelationshipCanBeSaved(t *testing.T) {
 	}
 
 	// 从无关系的状态应用补丁，确认领域校验接受新增关系并完整保留参与者索引。
+	initial, err := story.ResolveInitialStateItemIDs(genesis.InitialStoryState)
+	if err != nil {
+		t.Fatalf("初始人物状态 ID 生成失败: %v", err)
+	}
+	genesis.InitialStoryState = initial
 	if err := story.ValidateStoryState(genesis.InitialStoryState); err != nil {
 		t.Fatalf("初始化状态被拒绝: %v", err)
 	}
-	before := testGenesis().InitialStoryState
+	before, err := story.ResolveInitialStateItemIDs(testGenesis().InitialStoryState)
+	if err != nil {
+		t.Fatal(err)
+	}
 	next, err := story.ApplyPatch(before, commit.StatePatch)
 	if err != nil {
 		t.Fatalf("单个参与者的关系无法提交: %v", err)

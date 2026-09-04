@@ -50,12 +50,19 @@ type WorldFact struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
 }
+
+// StateItem 是人物状态内部可独立更新的最小持久化条目。
+// ID 只负责跨章节定位同一条当前事实，Value 才是 Writer 和各角色使用的小说内容。
+type StateItem struct {
+	ID    string `json:"id"`
+	Value string `json:"value"`
+}
 type CharacterState struct {
-	ID                       string   `json:"id"`
-	Name                     string   `json:"name"`
-	Facts                    []string `json:"facts"`
-	KnowledgeAndBeliefs      []string `json:"knowledge_and_beliefs"`
-	CommitmentsAndIntentions []string `json:"commitments_and_intentions"`
+	ID                       string      `json:"id"`
+	Name                     string      `json:"name"`
+	Facts                    []StateItem `json:"facts"`
+	KnowledgeAndBeliefs      []StateItem `json:"knowledge_and_beliefs"`
+	CommitmentsAndIntentions []StateItem `json:"commitments_and_intentions"`
 }
 type RelationshipState struct {
 	ID          string   `json:"id"`
@@ -100,9 +107,19 @@ type CollectionPatch[T any] struct {
 	Upsert []T      `json:"upsert"`
 	Remove []string `json:"remove"`
 }
+
+// CharacterPatch 只描述一个人物本章实际变化的内部条目。
+// 人物没有出现在补丁中，或某个内部条目 ID 没有被触碰，都表示继续保留旧值。
+type CharacterPatch struct {
+	ID                       string                     `json:"id"`
+	Name                     string                     `json:"name"`
+	Facts                    CollectionPatch[StateItem] `json:"facts"`
+	KnowledgeAndBeliefs      CollectionPatch[StateItem] `json:"knowledge_and_beliefs"`
+	CommitmentsAndIntentions CollectionPatch[StateItem] `json:"commitments_and_intentions"`
+}
 type StatePatch struct {
 	World         CollectionPatch[WorldFact]         `json:"world"`
-	Characters    CollectionPatch[CharacterState]    `json:"characters"`
+	Characters    CollectionPatch[CharacterPatch]    `json:"characters"`
 	Relationships CollectionPatch[RelationshipState] `json:"relationships"`
 }
 type TrajectoryMove struct {

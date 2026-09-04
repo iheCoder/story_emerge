@@ -5,16 +5,38 @@ import (
 	"testing"
 )
 
-func TestPatchReplacesCurrentFactsAndSupportsNewCharacters(t *testing.T) {
-	// 场景：旧失踪状态已失效，人物获知新消息，并与本章新出现的人物形成关系。
-	// 预期：相同 ID 替换当前值，失效事实移除；新人物与关系同批提交，不积累矛盾历史。
+func TestCharacterPatchOnlyTouchesChangedItems(t *testing.T) {
+	// 场景：人物新增一条认知、修正另一条认知，同时仍有一个本章未提及的承诺。
+	// 预期：相同条目 ID 只替换目标认知；空 ID 的新认知由程序补全；旧承诺因未出现在 Patch 中而保留。
 	before := CurrentStoryState{
-		World:      []WorldFact{{ID: "missing", Description: "某人失踪"}, {ID: "closed", Description: "道路封闭"}},
-		Characters: []CharacterState{{ID: "a", Name: "甲", KnowledgeAndBeliefs: []string{"以为对方仍在城里"}}},
+		World: []WorldFact{{ID: "missing", Description: "某人失踪"}, {ID: "closed", Description: "道路封闭"}},
+		Characters: []CharacterState{{
+			ID:   "a",
+			Name: "甲",
+			Facts: []StateItem{
+				{ID: "a-fact-resident", Value: "住在旧城"},
+				{ID: "a-fact-job", Value: "仍在车站工作"},
+			},
+			KnowledgeAndBeliefs: []StateItem{
+				{ID: "a-belief-location", Value: "以为对方仍在城里"},
+			},
+			CommitmentsAndIntentions: []StateItem{{ID: "a-commitment-wait", Value: "答应继续等候消息"}},
+		}},
 	}
 	patch := StatePatch{
-		World:         CollectionPatch[WorldFact]{Upsert: []WorldFact{{ID: "missing", Description: "已经找到当事人"}}, Remove: []string{"closed"}},
-		Characters:    CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲", KnowledgeAndBeliefs: []string{"怀疑乙隐瞒了行踪"}}, {ID: "b", Name: "乙"}}},
+		World: CollectionPatch[WorldFact]{Upsert: []WorldFact{{ID: "missing", Description: "已经找到当事人"}}, Remove: []string{"closed"}},
+		Characters: CollectionPatch[CharacterPatch]{Upsert: []CharacterPatch{
+			{
+				ID:    "a",
+				Name:  "甲",
+				Facts: CollectionPatch[StateItem]{Remove: []string{"a-fact-job"}},
+				KnowledgeAndBeliefs: CollectionPatch[StateItem]{Upsert: []StateItem{
+					{ID: "a-belief-location", Value: "确认对方已经离开城里"},
+					{ID: "", Value: "怀疑乙隐瞒了行踪"},
+				}},
+			},
+			{ID: "b", Name: "乙"},
+		}},
 		Relationships: CollectionPatch[RelationshipState]{Upsert: []RelationshipState{{ID: "ab", Characters: []string{"a", "b"}, Description: "开始相互试探"}}},
 	}
 	next, err := ApplyPatch(before, patch)
@@ -27,12 +49,48 @@ func TestPatchReplacesCurrentFactsAndSupportsNewCharacters(t *testing.T) {
 	if len(next.Characters) != 2 || len(next.Relationships) != 1 {
 		t.Fatalf("新增人物与关系丢失: %#v", next)
 	}
-	if len(next.Characters[0].KnowledgeAndBeliefs) != 1 {
-		t.Fatal("认知数组被追加成历史")
+	if len(next.Characters[0].KnowledgeAndBeliefs) != 2 || next.Characters[0].KnowledgeAndBeliefs[0].Value != "确认对方已经离开城里" {
+		t.Fatalf("人物认知没有按条目更新: %#v", next.Characters[0].KnowledgeAndBeliefs)
 	}
-	next.Characters[0].KnowledgeAndBeliefs[0] = "外部修改"
-	if before.Characters[0].KnowledgeAndBeliefs[0] != "以为对方仍在城里" || patch.Characters.Upsert[0].KnowledgeAndBeliefs[0] != "怀疑乙隐瞒了行踪" {
+	if next.Characters[0].KnowledgeAndBeliefs[1].ID == "" || len(next.Characters[0].CommitmentsAndIntentions) != 1 {
+		t.Fatalf("新增条目没有 ID，或未触碰的承诺丢失: %#v", next.Characters[0])
+	}
+	if len(next.Characters[0].Facts) != 1 || next.Characters[0].Facts[0].ID != "a-fact-resident" {
+		t.Fatalf("人物事实没有按 remove 精确删除: %#v", next.Characters[0].Facts)
+	}
+	next.Characters[0].KnowledgeAndBeliefs[0].Value = "外部修改"
+	if before.Characters[0].KnowledgeAndBeliefs[0].Value != "以为对方仍在城里" || patch.Characters.Upsert[0].KnowledgeAndBeliefs.Upsert[0].Value != "确认对方已经离开城里" {
 		t.Fatal("结果与旧状态或补丁共享可变数组")
+	}
+}
+
+func TestStateItemIDsAreStableAcrossResolutionAndRetry(t *testing.T) {
+	// 场景：Architect 产生无 ID 的初始条目，Commit 随后产生无 ID 的新增条目；同一提交可能因落盘失败而重试。
+	// 预期：程序补全所有 ID，并且同样输入每次解析得到相同 ID，避免重试产生第二份逻辑相同的状态。
+	initial := CurrentStoryState{Characters: []CharacterState{{ID: "a", Name: "甲", Facts: []StateItem{{Value: "住在旧城"}}}}}
+	resolvedInitial, err := ResolveInitialStateItemIDs(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolvedInitial.Characters[0].Facts[0].ID == "" {
+		t.Fatal("初始人物条目没有生成 ID")
+	}
+
+	patch := StatePatch{Characters: CollectionPatch[CharacterPatch]{Upsert: []CharacterPatch{{
+		ID: "a", Name: "甲", KnowledgeAndBeliefs: CollectionPatch[StateItem]{Upsert: []StateItem{{Value: "知道道路已经封闭"}}},
+	}}}}
+	first, err := ResolveStatePatchIDs(resolvedInitial, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ResolveStatePatchIDs(resolvedInitial, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID := first.Characters.Upsert[0].KnowledgeAndBeliefs.Upsert[0].ID
+	secondID := second.Characters.Upsert[0].KnowledgeAndBeliefs.Upsert[0].ID
+	if firstID == "" || firstID != secondID {
+		t.Fatalf("相同提交重试产生了不同 ID: %q != %q", firstID, secondID)
 	}
 }
 
@@ -42,10 +100,11 @@ func TestInvalidPatchCannotMutateCommittedState(t *testing.T) {
 	before := CurrentStoryState{Characters: []CharacterState{{ID: "a", Name: "甲"}, {ID: "b", Name: "乙"}}, Relationships: []RelationshipState{{ID: "ab", Characters: []string{"a", "b"}, Description: "朋友"}}}
 	saved := cloneStoryState(before)
 	for _, patch := range []StatePatch{
-		{Characters: CollectionPatch[CharacterState]{Remove: []string{"b"}}},
+		{Characters: CollectionPatch[CharacterPatch]{Remove: []string{"b"}}},
 		{World: CollectionPatch[WorldFact]{Remove: []string{"unknown"}}},
-		{Characters: CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲"}}, Remove: []string{"a"}}},
-		{Characters: CollectionPatch[CharacterState]{Upsert: []CharacterState{{ID: "a", Name: "甲"}, {ID: "a", Name: "另一个甲"}}}},
+		{Characters: CollectionPatch[CharacterPatch]{Upsert: []CharacterPatch{{ID: "a", Name: "甲"}}, Remove: []string{"a"}}},
+		{Characters: CollectionPatch[CharacterPatch]{Upsert: []CharacterPatch{{ID: "a", Name: "甲"}, {ID: "a", Name: "另一个甲"}}}},
+		{Characters: CollectionPatch[CharacterPatch]{Upsert: []CharacterPatch{{ID: "a", Name: "甲", Facts: CollectionPatch[StateItem]{Upsert: []StateItem{{ID: "unknown", Value: "未知引用"}}}}}}},
 	} {
 		if _, err := ApplyPatch(before, patch); err == nil {
 			t.Fatal("非法补丁被接受")
@@ -55,7 +114,7 @@ func TestInvalidPatchCannotMutateCommittedState(t *testing.T) {
 		}
 	}
 	// 同时删除对应关系即可合法移除人物，不要求保留已经失效的历史条目。
-	_, err := ApplyPatch(before, StatePatch{Characters: CollectionPatch[CharacterState]{Remove: []string{"b"}}, Relationships: CollectionPatch[RelationshipState]{Remove: []string{"ab"}}})
+	_, err := ApplyPatch(before, StatePatch{Characters: CollectionPatch[CharacterPatch]{Remove: []string{"b"}}, Relationships: CollectionPatch[RelationshipState]{Remove: []string{"ab"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

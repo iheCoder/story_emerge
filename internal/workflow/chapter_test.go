@@ -49,7 +49,7 @@ func testGenesis() story.Genesis {
 			ReaderPromises:     []story.ReaderPromise{{Promise: "信任", PayoffShape: "共同经历"}, {Promise: "责任", PayoffShape: "选择的结果"}, {Promise: "旅程", PayoffShape: "找到自己的落点"}},
 			ExperienceContract: story.ExperienceContract{TargetExperience: "普通人的生活", NarrativePrinciples: []string{"通过场景呈现"}, DriftBoundaries: []string{"连续解释"}},
 		},
-		InitialStoryState: story.CurrentStoryState{World: []story.WorldFact{{ID: "world", Description: "CURRENT_FACT"}}, Characters: []story.CharacterState{{ID: "a", Name: "阿禾", Facts: []string{"村民"}, KnowledgeAndBeliefs: []string{}, CommitmentsAndIntentions: []string{}}}, Relationships: []story.RelationshipState{}},
+		InitialStoryState: story.CurrentStoryState{World: []story.WorldFact{{ID: "world", Description: "CURRENT_FACT"}}, Characters: []story.CharacterState{{ID: "a", Name: "阿禾", Facts: []story.StateItem{{Value: "村民"}}, KnowledgeAndBeliefs: []story.StateItem{}, CommitmentsAndIntentions: []story.StateItem{}}}, Relationships: []story.RelationshipState{}},
 		CurrentDirection:  story.Direction{Focus: "DIRECTION_NOT_FOR_WRITER", DesiredShift: "自然建立信任"},
 	}
 }
@@ -64,7 +64,7 @@ func accepted() story.EditorDecision {
 }
 func extracted() story.CommitResult {
 	return story.CommitResult{
-		StatePatch:      story.StatePatch{World: story.CollectionPatch[story.WorldFact]{Upsert: []story.WorldFact{}, Remove: []string{}}, Characters: story.CollectionPatch[story.CharacterState]{Upsert: []story.CharacterState{}, Remove: []string{}}, Relationships: story.CollectionPatch[story.RelationshipState]{Upsert: []story.RelationshipState{}, Remove: []string{}}},
+		StatePatch:      story.StatePatch{World: story.CollectionPatch[story.WorldFact]{Upsert: []story.WorldFact{}, Remove: []string{}}, Characters: story.CollectionPatch[story.CharacterPatch]{Upsert: []story.CharacterPatch{}, Remove: []string{}}, Relationships: story.CollectionPatch[story.RelationshipState]{Upsert: []story.RelationshipState{}, Remove: []string{}}},
 		TrajectoryEntry: story.TrajectoryMove{StoryMove: "TRAJECTORY_NOT_FOR_WRITER", NarrativeShape: "相处 → 感受陪伴"}, ChapterSummary: "LEDGER_NOT_FOR_WRITER",
 	}
 }
@@ -269,6 +269,85 @@ func TestCommitFailureCanResumeFromUnchangedCheckpoint(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(files.Root(), "story-core.json"))
 	if state.Chapter != 1 || string(before) != string(after) {
 		t.Fatal("恢复没有保持正式历史和 Core")
+	}
+}
+
+func TestWorkflowPersistsResolvedAtomicCharacterPatch(t *testing.T) {
+	// 场景：Architect 和 Commit 都按提示词给人物内部的新条目返回空 ID，Commit 只提交一条新增认知。
+	// 预期：.work 保留模型原始输出；正式初态、commit.json 和 checkpoint 都使用程序生成的稳定 ID，旧 facts 不会丢失。
+	fake := newFake(1)
+	result := extracted()
+	result.StatePatch.Characters.Upsert = []story.CharacterPatch{{
+		ID:   "a",
+		Name: "阿禾",
+		Facts: story.CollectionPatch[story.StateItem]{
+			Upsert: []story.StateItem{}, Remove: []string{},
+		},
+		KnowledgeAndBeliefs: story.CollectionPatch[story.StateItem]{Upsert: []story.StateItem{{
+			Value: "知道道路已经封闭",
+		}}, Remove: []string{}},
+		CommitmentsAndIntentions: story.CollectionPatch[story.StateItem]{
+			Upsert: []story.StateItem{}, Remove: []string{},
+		},
+	}}
+	fake.responses[chapterStage(1, "commit")] = mustJSON(result)
+
+	engine, files := initializeTest(t, fake)
+	initial, err := files.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial.Story.Characters[0].Facts) != 1 || initial.Story.Characters[0].Facts[0].ID == "" {
+		t.Fatalf("正式初态没有补全人物条目 ID: %#v", initial.Story.Characters[0])
+	}
+	var rawGenesis story.Genesis
+	rawGenesisData, err := os.ReadFile(filepath.Join(files.Root(), ".work", "000-genesis.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rawGenesisData, &rawGenesis); err != nil {
+		t.Fatal(err)
+	}
+	if rawGenesis.InitialStoryState.Characters[0].Facts[0].ID != "" {
+		t.Fatal(".work 没有保留 Architect 的原始空 ID")
+	}
+	if err := engine.Run(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// 原始工作文件中的空 ID 证明 ID 不是模型碰巧生成的；正式提交则必须已经可重放。
+	var rawCommit story.CommitResult
+	rawData, err := os.ReadFile(filepath.Join(files.Root(), ".work", "001-chapter_001_commit.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rawData, &rawCommit); err != nil {
+		t.Fatal(err)
+	}
+	if rawCommit.StatePatch.Characters.Upsert[0].KnowledgeAndBeliefs.Upsert[0].ID != "" {
+		t.Fatal(".work 没有保留模型的原始空 ID")
+	}
+
+	var committed story.ChapterCommit
+	commitData, err := os.ReadFile(filepath.Join(files.Root(), "commits", "001.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(commitData, &committed); err != nil {
+		t.Fatal(err)
+	}
+	itemID := committed.Result.StatePatch.Characters.Upsert[0].KnowledgeAndBeliefs.Upsert[0].ID
+	if itemID == "" {
+		t.Fatal("commit.json 保存了无法重放的空 ID")
+	}
+
+	current, err := files.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	character := current.Story.Characters[0]
+	if len(character.Facts) != 1 || len(character.KnowledgeAndBeliefs) != 1 || character.KnowledgeAndBeliefs[0].ID != itemID {
+		t.Fatalf("原子 Patch 丢失旧状态或与提交记录不一致: %#v", character)
 	}
 }
 

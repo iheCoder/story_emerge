@@ -26,6 +26,8 @@ initial_story_state：
 - world 保存客观世界事实。
 - characters 分别保存 facts、knowledge_and_beliefs、commitments_and_intentions。
   人物的猜测或错误认识必须归属于具体人物，不能写成世界真相。
+  这三个字段中的每一项都是 `{id, value}`：value 只写一条可独立更新的当前状态；初始化时 id 一律返回空字符串，由程序生成稳定 ID。
+  不要把数条彼此无关的事实合并成一个 value，否则后续章节无法只修改其中一条。
 - relationships 优先保存影响未来互动的关系现实。
   条目使用稳定 id，characters 中引用的人物 id 不得重复，且都必须出现在初始 characters 中。单个人的事实、认知与承诺写入该人物字段。不要为了补齐关系参与者而额外建立人物档案。不要生成人物百科、世界百科或历史档案。
 

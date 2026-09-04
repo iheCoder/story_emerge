@@ -112,19 +112,58 @@
               "facts": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "value"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "knowledge_and_beliefs": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "value"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "commitments_and_intentions": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "value"
+                  ],
+                  "additionalProperties": false
                 }
               }
             },

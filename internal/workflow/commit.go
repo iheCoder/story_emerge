@@ -32,6 +32,13 @@ func (engine *Engine) extractAccepted(ctx context.Context, number int, previous 
 	if err := engine.store.SaveWorking(number, stage+".json", result); err != nil {
 		return result, err
 	}
+
+	// Commit 用空 ID 表示新增人物状态，程序在正式提交前生成可重放 ID。
+	// 已有条目的修改和删除仍必须引用旧 ID；未出现在 Patch 中的条目由 reducer 原样保留。
+	result.StatePatch, err = story.ResolveStatePatchIDs(previous, result.StatePatch)
+	if err != nil {
+		return result, err
+	}
 	return result, story.ValidateCommitResult(result)
 }
 
