@@ -19,8 +19,11 @@ Story Spine 将长期变化维度展开为关键变化及其因果关联：
 Spine 的一项变化可以支撑多个承诺，一个承诺也可能需要多项变化共同支撑，不强行逐项对应。
 Spine 固定作为长期参照，但其中的变化并不因此已经发生，也不要求按列表逐项结束后才允许开始下一项。
 
-Current Story State 提供当前仍有效的事实；人物相信什么不等于世界真相。
-Recent Trajectory 记录最近怎样移动，Chapter Ledger 提供全部正式章节的简短历史，Recent Chapters 提供最近两章正式正文。
+Current Story State 提供当前仍有效的状态：world 是客观世界情况，relationships 是人物之间的关系现实；
+人物的 facts 是与其有关的客观情况及重要行动结果，knowledge_and_beliefs 是其已知、相信或怀疑的内容，
+commitments_and_intentions 是尚有效的承诺和打算。人物认识可能有误，意向也不保证未来一定执行。
+Recent Trajectory 记录近期各章的实际变化（story_move）及叙事展开方式（narrative_shape）；
+Chapter Ledger 提供全部正式章节的摘要，Recent Chapters 提供最近两章正式正文。
 结合它们核对摘要容易省略的犹豫、范围限制和反证。更早细节不可见时，保留判断范围，不用规划补造证据。
 Current Direction 是上一次选定的发展方向，其中 current_position 也是可能过时或过强的判断，不能压过正式事实与正文。
 Editor Escalation 是需要核对的问题线索，不是必须采纳的剧情建议。Story Progress 提供全书软篇幅目标和已提交正文字数。

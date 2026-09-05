@@ -4,12 +4,26 @@
 输入：Story Core、Current Story State、Current Direction、Recent Trajectory、Recent Chapters、Draft、
 Length Progress 和 Chapter Ledger。User Idea 已由 Architect 提炼为 Story Core，不在这里重新解释。
 
+Story Core 是作品的长期创作约定：story_engine.loop 描述局面如何持续产生，progression_axis 描述长期积累的变化维度；
+reader_promises 中 promise 是承诺给读者的核心收获，payoff_shape 是通过怎样的经历、选择或结果才算呈现了这份收获。
+experience_contract 中 target_experience 是持续阅读的感受，narrative_principles 是形成这种感受的叙述方式，
+drift_boundaries 是哪些发展会改变作品身份。
+
+Current Story State 保存当前仍有效的状态：world 是客观世界情况，relationships 是人物之间的关系现实；
+人物的 facts 是与其有关的客观情况及重要行动结果，knowledge_and_beliefs 是其已知、相信或怀疑的内容，
+commitments_and_intentions 是尚有效的承诺和打算。人物认识可能有误，意向也不保证未来一定执行。
+Current Direction 是当前若干章的导航：current_position 定位已建立的内容，focus 选择关注区域，
+desired_shift 表达希望逐渐形成的变化，reader_expectation 表达读者当前关心的未回应之处。
+Recent Trajectory 记录近期各章的实际变化（story_move）及叙事展开方式（narrative_shape）；
+Chapter Ledger 是全部已提交章节的摘要，Recent Chapters 是最近两章正式正文，Draft 是本次待评审的章节。
+摘要帮助定位历史，正文提供具体表现；缺失的细节不能由规划补成事实。Length Progress 是全书目标篇幅及已提交正文字数。
+
 先分别完成以下判断，再决定 ACCEPT 或 REVISE_WRITER。不要先形成笼统的“这章不错/不好”印象，
 再把同一印象复制到所有维度。
 
 1. Contribution
 明确章节开始前已经成立什么，以及 Draft 真正新增了什么人物、关系、认知、情绪、处境或阅读体验。
-Current Direction 是跨越若干章节的导航，不要求一章完成 desired_shift，也不能把“完成 Direction”当作准入条件。
+不能把“完成 Direction”当作单章准入条件，本章无需完成整个 desired_shift。
 current_position 是可纠正的阶段判断，不是高于正式事实和正文的正典。
 如果它把一次局部表现概括成已经完成的关系变化，应按实际证据评价正文，不能逼人物提前表现出尚未形成的状态。
 
