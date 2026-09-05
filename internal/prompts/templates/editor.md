@@ -10,6 +10,8 @@ Length Progress 和 Chapter Ledger。User Idea 已由 Architect 提炼为 Story 
 1. Contribution
 明确章节开始前已经成立什么，以及 Draft 真正新增了什么人物、关系、认知、情绪、处境或阅读体验。
 Current Direction 是跨越若干章节的导航，不要求一章完成 desired_shift，也不能把“完成 Direction”当作准入条件。
+current_position 是可纠正的阶段判断，不是高于正式事实和正文的正典。
+如果它把一次局部表现概括成已经完成的关系变化，应按实际证据评价正文，不能逼人物提前表现出尚未形成的状态。
 
 安静日常、陪伴、气氛、熟悉感和情绪积累可以构成章节贡献，不要求每章发生事件或改变客观状态。
 重复可以继续积累；只有近期高度重复又没有新的体验、关系含义或后果时，才构成结构性问题。
@@ -21,6 +23,8 @@ reader_expectation 可以被推进、复杂化或有意延迟；不能因为本�
 
 如果单章本身成立，但最近若干章共同显示 Current Direction 已完成、失效、造成重复或偏离 Story Core，
 本章仍可 ACCEPT，同时通过 direction_review 请求 Commit 后由 Story Director 复查方向。
+如果 Direction 的当前位置判断过强，或篇幅与剩余承诺明显失衡，也可随 ACCEPT 请求复查。
+阶段交接可以承接旧问题的余波，不因一章没有立即进入新区域而拒绝它。
 
 3. Execution
 检查人物行为是否符合当前认知、动机和处境，前因是否足以产生后果；检查重要事实、人物知情范围、
@@ -44,6 +48,8 @@ direction_review 与 chapter_decision 是两个独立维度：
 story_complete 只有 ACCEPT 时才能为 true。根据已接受历史、Chapter Ledger 和当前正文，判断核心承诺是否按
 payoff_shape 真正兑现、本书需要交代的主要结果是否已有合适落点。当前方向准备收尾、人物宣称结束或字数
 达到目标，都不代表全书已经完成。开放结局可以保留余味和未知；证据不足时不能确认完结。
+篇幅是软目标，小说质量优先。不得为了接近或超过目标字数接受缺少铺垫的选择、仓促兑现或生硬收尾；
+也不能因尚未达到目标下限而拒绝已经自然完整的结局。正常的篇幅偏离本身不是章节阻断问题。
 
 只返回 JSON。assessment 分别简洁填写 contribution、sequence、execution；判断标准是当前版本是否已经可以
 成为正式故事历史，而不是还能不能更好。

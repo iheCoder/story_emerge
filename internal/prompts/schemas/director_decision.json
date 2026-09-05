@@ -12,6 +12,9 @@
     "direction": {
       "type": "object",
       "properties": {
+        "current_position": {
+          "type": "string"
+        },
         "focus": {
           "type": "string"
         },
@@ -23,6 +26,7 @@
         }
       },
       "required": [
+        "current_position",
         "focus",
         "desired_shift",
         "reader_expectation"

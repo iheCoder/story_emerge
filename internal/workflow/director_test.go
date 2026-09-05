@@ -20,7 +20,7 @@ func TestStoryDirectorCanRunAloneWithoutTouchingProductionState(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := store.New(root)
-	current := story.Direction{
+	current := story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立",
 		Focus:             "两人的合作从方便逐渐变成一种生活选择",
 		DesiredShift:      "双方开始主动为共同生活承担代价",
 		ReaderExpectation: "这种主动选择遇到外部压力时能否继续成立",
@@ -37,6 +37,8 @@ func TestStoryDirectorCanRunAloneWithoutTouchingProductionState(t *testing.T) {
 	}
 	input := directorInput{
 		StoryCore:         testGenesis().StoryCore,
+		StorySpine:        testGenesis().StorySpine,
+		RecentChapters:    []string{"# 第3章 留下\n\n两人愿意彼此倾诉，但还没有共同作出重要决定。"},
 		CurrentStoryState: testGenesis().InitialStoryState,
 		CurrentDirection:  current,
 		RecentTrajectory:  []story.TrajectoryEntry{{Chapter: 3, TrajectoryMove: story.TrajectoryMove{StoryMove: "共同承担了一次损失", NarrativeShape: "试探 → 主动留下"}}},
@@ -58,7 +60,7 @@ func TestStoryDirectorCanRunAloneWithoutTouchingProductionState(t *testing.T) {
 	if request.Role != llm.RoleDirector || request.SchemaName != "director_decision" {
 		t.Fatalf("Director 路由或 Schema 错误: %#v", request)
 	}
-	for _, required := range []string{"story_core", "current_story_state", "current_direction", "recent_trajectory", "chapter_ledger", "story_progress", "editor_escalation"} {
+	for _, required := range []string{"story_core", "story_spine", "recent_chapters", "current_story_state", "current_direction", "recent_trajectory", "chapter_ledger", "story_progress", "editor_escalation"} {
 		if !strings.Contains(request.Input, required) {
 			t.Fatalf("Director 输入缺少阶段依据: %s", required)
 		}
@@ -78,11 +80,25 @@ func TestStoryDirectorCanRunAloneWithoutTouchingProductionState(t *testing.T) {
 	}
 }
 
-func TestDirectorStructuredOutputRejectsStoryStatus(t *testing.T) {
-	// 场景：模型沿用旧设想，在合法决定之外额外返回 story_status。
-	// 预期：严格 JSON 解码直接拒绝未知字段，完结权不会从 Editor 漂移到 Director。
-	output := `{"action":"KEEP","direction":{"focus":"重心","desired_shift":"变化","reader_expectation":"期待"},"reason":"继续积累","story_status":"ONGOING"}`
-	if _, err := decodeStructured[story.DirectorDecision](output); err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("story_status 未被严格拒绝: %v", err)
+func TestDirectorStructuredOutputRejectsUnauthorizedFields(t *testing.T) {
+	// 场景：模型在合法的方向决定之外，额外尝试修改 Spine 或声明故事状态。
+	// 预期：发给模型的 Schema 与严格解码均拒绝越权字段，防止两层协议不同步。
+	_, schema, err := loadPromptAndSchema("director", "director_decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"story_status", "spine_revision", "story_spine"} {
+		t.Run(field, func(t *testing.T) {
+			output := map[string]any{
+				"action": "KEEP", "direction": testDirection(), "reason": "继续积累",
+				field: testGenesis().StorySpine,
+			}
+			if err := validateOutputShape(mustJSON(output), schema); err == nil || !strings.Contains(err.Error(), "未授权字段") {
+				t.Fatalf("Schema 未拒绝 %s: %v", field, err)
+			}
+			if _, err := decodeStructured[story.DirectorDecision](mustJSON(output)); err == nil || !strings.Contains(err.Error(), "unknown field") {
+				t.Fatalf("%s 未被严格拒绝: %v", field, err)
+			}
+		})
 	}
 }

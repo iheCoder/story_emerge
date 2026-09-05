@@ -220,8 +220,9 @@ func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (s
 	return next, nil
 }
 
-// CommitDirectionReview 在当前 HEAD 对应的检查点上原子更新 Direction，不创建新章节也不移动 HEAD。
-// 先写审计记录再替换检查点；若检查点写入失败，旧 Direction 仍是正式状态，下次运行会重新复查。
+// CommitDirectionReview 在当前 HEAD 对应的检查点上原子更新 Direction，不移动 HEAD 或修改 Spine。
+// 先写审计记录再替换检查点；若检查点写入失败，旧 Direction 仍正式有效，
+// 下次运行重新复查，不能把先行审计当成已经生效的阶段方向。
 func (store *Store) CommitDirectionReview(review story.DirectionReview) (story.State, error) {
 	current, err := store.LoadState()
 	if err != nil {

@@ -10,13 +10,16 @@ import (
 
 const directionReviewInterval = 3
 
-// directorInput 只包含 Story Director 进行阶段判断所需的正式历史。
+// directorInput 提供固定的创作参照、正式历史和当前方向，供 Director 判断近期发展。
+// Spine 与 Direction 都是规划信息；仅事实和正式正文能证明某项变化已经发生。
 type directorInput struct {
 	StoryCore         story.StoryCore         `json:"story_core"`
+	StorySpine        []story.SpineStage      `json:"story_spine"`
 	CurrentStoryState story.CurrentStoryState `json:"current_story_state"`
 	CurrentDirection  story.Direction         `json:"current_direction"`
 	RecentTrajectory  []story.TrajectoryEntry `json:"recent_trajectory"`
 	ChapterLedger     []story.LedgerEntry     `json:"chapter_ledger"`
+	RecentChapters    []string                `json:"recent_chapters"`
 	StoryProgress     lengthProgress          `json:"story_progress"`
 	EditorEscalation  string                  `json:"editor_escalation,omitempty"`
 }
@@ -72,9 +75,14 @@ func (engine *Engine) reviewDirectionIfNeeded(ctx context.Context, project story
 	if err != nil {
 		return current, err
 	}
+	recentChapters, err := engine.loadRecentChapters(current.Chapter)
+	if err != nil {
+		return current, err
+	}
 	decision, err := engine.reviewStoryDirection(ctx, current.Chapter, directorInput{
-		StoryCore: core, CurrentStoryState: current.Story, CurrentDirection: current.Direction,
+		StoryCore: core, StorySpine: current.StorySpine, CurrentStoryState: current.Story, CurrentDirection: current.Direction,
 		RecentTrajectory: current.RecentTrajectory, ChapterLedger: ledger,
+		RecentChapters:   recentChapters,
 		StoryProgress:    lengthProgress{TargetLength: story.LengthGoal(project.LengthProfile), WrittenCharacters: current.WrittenCharacters},
 		EditorEscalation: escalation,
 	})

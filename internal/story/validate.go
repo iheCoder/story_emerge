@@ -25,6 +25,9 @@ func ValidateGenesis(genesis Genesis) error {
 	if err := ValidateCore(genesis.StoryCore); err != nil {
 		return err
 	}
+	if err := ValidateSpine(genesis.StorySpine); err != nil {
+		return err
+	}
 	if err := ValidateDirection(genesis.CurrentDirection); err != nil {
 		return err
 	}
@@ -48,8 +51,22 @@ func ValidateCore(core StoryCore) error {
 	return nil
 }
 func ValidateDirection(direction Direction) error {
-	if !nonempty(direction.Focus) || !nonempty(direction.DesiredShift) || !nonempty(direction.ReaderExpectation) {
-		return fmt.Errorf("当前方向缺少重心、期望变化或读者期待")
+	if !nonempty(direction.CurrentPosition) || !nonempty(direction.Focus) || !nonempty(direction.DesiredShift) || !nonempty(direction.ReaderExpectation) {
+		return fmt.Errorf("当前方向缺少当前位置、重心、期望变化或读者期待")
+	}
+	return nil
+}
+
+// ValidateSpine 只检查参照是否完整可读。阶段多少、因果是否成立、变化是否充分都是文学判断，
+// 不在代码中比较前后状态文本、强制串行依赖或设置题材规则。
+func ValidateSpine(spine []SpineStage) error {
+	if len(spine) == 0 {
+		return fmt.Errorf("缺少 Story Spine")
+	}
+	for index, stage := range spine {
+		if !nonempty(stage.From) || !nonempty(stage.To) || !nonempty(stage.WhyItMatters) || !nonempty(stage.ExitEvidence) {
+			return fmt.Errorf("Story Spine 第 %d 项缺少变化、因果作用或成立依据", index+1)
+		}
 	}
 	return nil
 }
@@ -190,6 +207,9 @@ func ValidateState(state State) error {
 		return fmt.Errorf("初始检查点不能已经完结或包含正文字数")
 	}
 	if err := ValidateDirection(state.Direction); err != nil {
+		return err
+	}
+	if err := ValidateSpine(state.StorySpine); err != nil {
 		return err
 	}
 	if len(state.RecentTrajectory) != min(state.Chapter, RecentTrajectoryLimit) {

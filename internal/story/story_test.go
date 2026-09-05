@@ -154,7 +154,7 @@ func TestRelationshipIntegrityStillRejectsInvalidIDs(t *testing.T) {
 func TestQuietChaptersKeepFactsAndRollTrajectory(t *testing.T) {
 	// 场景：连续七章只承担情绪/日常功能，没有事实补丁。
 	// 预期：空补丁合法；只留最后五章轨迹；字数再多也不自行完结。
-	current := State{Direction: Direction{Focus: "共同生活", DesiredShift: "逐渐建立信任", ReaderExpectation: "读者等待信任如何形成"}, DirectionVersion: 1}
+	current := State{StorySpine: testSpine(), Direction: Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "逐渐建立信任", ReaderExpectation: "读者等待信任如何形成"}, DirectionVersion: 1}
 	for number := 1; number <= 7; number++ {
 		commit := ChapterCommit{Chapter: number, Title: "日常", Review: EditorDecision{ChapterDecision: EditorAccept, Assessment: EditorAssessment{Contribution: "呈现陪伴", Sequence: "继续积累关系", Execution: "日常可信"}}, Result: CommitResult{ChapterSummary: "一起做饭", TrajectoryEntry: TrajectoryMove{StoryMove: "现实局势未变，呈现陪伴", NarrativeShape: "做饭 → 交谈"}}}
 		next, err := ApplyChapter(current, "# 第1章 日常\n\n甲和乙一起做饭。", commit)
@@ -188,14 +188,14 @@ func TestDirectionReviewChangesOnlyDirectionMetadata(t *testing.T) {
 	// 场景：第三章提交后 Director 调整阶段方向。
 	// 预期：章节、事实、字数与轨迹完全不变，只更新 Direction、版本和复查章节。
 	current := State{
-		Chapter: 3, Direction: Direction{Focus: "建立信任", DesiredShift: "形成合作", ReaderExpectation: "读者等待两人能否合作"},
+		Chapter: 3, StorySpine: testSpine(), Direction: Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "建立信任", DesiredShift: "形成合作", ReaderExpectation: "读者等待两人能否合作"},
 		DirectionVersion: 1, RecentTrajectory: []TrajectoryEntry{
 			{Chapter: 1, TrajectoryMove: TrajectoryMove{StoryMove: "相识", NarrativeShape: "见面"}},
 			{Chapter: 2, TrajectoryMove: TrajectoryMove{StoryMove: "试探", NarrativeShape: "交谈"}},
 			{Chapter: 3, TrajectoryMove: TrajectoryMove{StoryMove: "合作", NarrativeShape: "共同处理问题"}},
 		}, WrittenCharacters: 1200,
 	}
-	updated := Direction{Focus: "承担后果", DesiredShift: "从合作转向共同负责", ReaderExpectation: "读者等待合作如何经受代价"}
+	updated := Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "承担后果", DesiredShift: "从合作转向共同负责", ReaderExpectation: "读者等待合作如何经受代价"}
 	next, err := ApplyDirectionReview(current, DirectionReview{AfterChapter: 3, Version: 2, Decision: DirectorDecision{Action: DirectorAdjust, Direction: updated, Reason: "合作已经形成"}})
 	if err != nil {
 		t.Fatal(err)

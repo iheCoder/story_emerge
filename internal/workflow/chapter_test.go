@@ -45,7 +45,7 @@ func mustJSON(value any) string {
 }
 
 func testDirection() story.Direction {
-	return story.Direction{
+	return story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立",
 		Focus: "DIRECTION_FOR_WRITER", DesiredShift: "自然建立信任",
 		ReaderExpectation: "读者等待看到两人是否愿意共同承担选择",
 	}
@@ -63,6 +63,7 @@ func testGenesis() story.Genesis {
 			Characters:    []story.CharacterState{{ID: "a", Name: "阿禾", Facts: []story.StateItem{{Value: "村民"}}, KnowledgeAndBeliefs: []story.StateItem{}, CommitmentsAndIntentions: []story.StateItem{}}},
 			Relationships: []story.RelationshipState{},
 		},
+		StorySpine:       []story.SpineStage{{From: "互不信任", To: "能够依靠", WhyItMatters: "SPINE_FUTURE_SECRET", ExitEvidence: "愿意把对方纳入重要决定"}},
 		CurrentDirection: testDirection(),
 	}
 }
@@ -149,7 +150,7 @@ func TestRollingFlowGivesWriterLocalPlanningContextAndStopsAfterAcceptedCompleti
 
 	for stage, request := range fake.requests {
 		if request.Role == llm.RoleWriter {
-			for _, forbidden := range []string{"RAW_USER_IDEA_ONLY", "LEDGER_NOT_FOR_WRITER", "user_idea", "chapter_ledger", "written_characters"} {
+			for _, forbidden := range []string{"RAW_USER_IDEA_ONLY", "LEDGER_NOT_FOR_WRITER", "SPINE_FUTURE_SECRET", "story_spine", "user_idea", "chapter_ledger", "written_characters"} {
 				if strings.Contains(request.Input, forbidden) {
 					t.Fatalf("%s 泄露 %s", stage, forbidden)
 				}
@@ -165,7 +166,7 @@ func TestRollingFlowGivesWriterLocalPlanningContextAndStopsAfterAcceptedCompleti
 			}
 		}
 		if request.Role == llm.RoleEditor {
-			if strings.Contains(request.Input, "RAW_USER_IDEA_ONLY") || !strings.Contains(request.Input, "\"chapter_ledger\"") {
+			if strings.Contains(request.Input, "RAW_USER_IDEA_ONLY") || strings.Contains(request.Input, "SPINE_FUTURE_SECRET") || !strings.Contains(request.Input, "\"chapter_ledger\"") {
 				t.Fatalf("Editor 权限错误: %s", request.Input)
 			}
 		}
@@ -199,7 +200,7 @@ func TestDirectorRunsAfterThirdCommitAndUpdatesNextWriter(t *testing.T) {
 	// 场景：前三章使用初始 Direction；第三章提交后 Director 认为阶段需要调整，然后继续生成第四章。
 	// 预期：调用顺序严格为 Commit3 → Director3 → Writer4，第四章 Writer 直接读取新 Direction。
 	fake := newFake(4)
-	updated := story.Direction{Focus: "UPDATED_STAGE", DesiredShift: "共同承担外部后果", ReaderExpectation: "读者等待两人如何共同作出代价更高的选择"}
+	updated := story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "UPDATED_STAGE", DesiredShift: "共同承担外部后果", ReaderExpectation: "读者等待两人如何共同作出代价更高的选择"}
 	fake.responses[chapterStage(3, "director")] = mustJSON(story.DirectorDecision{
 		Action: story.DirectorAdjust, Direction: updated, Reason: "信任已经形成，阶段重心需要转向共同承担",
 	})

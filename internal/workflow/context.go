@@ -47,16 +47,9 @@ func (engine *Engine) buildChapterContext(project story.Project, core story.Stor
 		return chapterContext{}, err
 	}
 
-	// Editor 只需最近两个已接受章节的正文来判断当前 Draft 放入序列后的效果。
-	// 更早的长程历史由 Ledger 提供，避免每章重复注入不断增长的完整正文。
-	recentChapters := make([]string, 0, 2)
-	first := max(1, current.Chapter-1)
-	for number := first; number <= current.Chapter; number++ {
-		chapter, err := engine.store.LoadChapter(number)
-		if err != nil {
-			return chapterContext{}, err
-		}
-		recentChapters = append(recentChapters, chapter)
+	recentChapters, err := engine.loadRecentChapters(current.Chapter)
+	if err != nil {
+		return chapterContext{}, err
 	}
 
 	return chapterContext{
@@ -65,4 +58,19 @@ func (engine *Engine) buildChapterContext(project story.Project, core story.Stor
 		ChapterLedger: ledger, PreviousChapter: previous, RecentChapters: recentChapters, NextChapter: current.Chapter + 1,
 		LengthProgress: lengthProgress{TargetLength: story.LengthGoal(project.LengthProfile), WrittenCharacters: current.WrittenCharacters},
 	}, nil
+}
+
+// loadRecentChapters 给 Editor 和 Director 提供最近两章正式正文。
+// 原文保留摘要容易省略的犹豫、限制和情绪铺垫；更早历史仍由 State 与 Ledger 提供。
+// 始终通过 Store 的 HEAD 边界读取，不能把 .work 草稿或失败提交的孤儿文件当成阶段证据。
+func (engine *Engine) loadRecentChapters(afterChapter int) ([]string, error) {
+	chapters := make([]string, 0, 2)
+	for number := max(1, afterChapter-1); number <= afterChapter; number++ {
+		chapter, err := engine.store.LoadChapter(number)
+		if err != nil {
+			return nil, err
+		}
+		chapters = append(chapters, chapter)
+	}
+	return chapters, nil
 }

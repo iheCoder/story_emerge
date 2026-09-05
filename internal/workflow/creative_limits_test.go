@@ -77,7 +77,7 @@ func TestRelaxedCreativeLimitsKeepRequiredContentAndDecisionConsistency(t *testi
 		}
 	})
 	t.Run("Direction缺少读者期待", func(t *testing.T) {
-		if err := story.ValidateDirection(story.Direction{Focus: "寻找真相", DesiredShift: "获得证据"}); err == nil {
+		if err := story.ValidateDirection(story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "寻找真相", DesiredShift: "获得证据"}); err == nil {
 			t.Fatal("不完整 Direction 被接受")
 		}
 	})

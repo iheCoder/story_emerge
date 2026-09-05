@@ -12,6 +12,7 @@ const RecentTrajectoryLimit = 5
 func NewInitialState(genesis Genesis) State {
 	return State{
 		Story: cloneStoryState(genesis.InitialStoryState), Direction: genesis.CurrentDirection,
+		StorySpine:       append([]SpineStage{}, genesis.StorySpine...),
 		DirectionVersion: 1, RecentTrajectory: []TrajectoryEntry{},
 	}
 }
@@ -300,8 +301,8 @@ func ApplyChapter(current State, chapter string, commit ChapterCommit) (State, e
 	return next, ValidateState(next)
 }
 
-// ApplyDirectionReview 在同一章检查点上提交 Director 结论，不推进章节号、正文或事实。
-// KEEP 只记录已经复查过该检查点；ADJUST/REPLACE 才产生新的 Direction 版本。
+// ApplyDirectionReview 在同一章检查点上提交 Direction，不改变 Spine、章节号、正文或事实。
+// KEEP 保持 Direction 与其版本；ADJUST/REPLACE 才产生新的 Direction 版本。
 func ApplyDirectionReview(current State, review DirectionReview) (State, error) {
 	if current.Completed || current.Chapter < 1 || review.AfterChapter != current.Chapter {
 		return State{}, fmt.Errorf("不能在已完结故事或错误章节提交 Direction Review")
@@ -314,6 +315,7 @@ func ApplyDirectionReview(current State, review DirectionReview) (State, error) 
 	}
 
 	next := current
+	// 只更新阶段方向及复查元数据；初始化时建立的 Spine 随原检查点保留。
 	next.Direction = review.Decision.Direction
 	next.DirectionReviewedAfterChapter = review.AfterChapter
 	if review.Decision.Action == DirectorKeep {

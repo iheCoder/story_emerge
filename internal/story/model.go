@@ -17,6 +17,7 @@ type Project struct {
 type Genesis struct {
 	Title             string            `json:"title"`
 	StoryCore         StoryCore         `json:"story_core"`
+	StorySpine        []SpineStage      `json:"story_spine"`
 	InitialStoryState CurrentStoryState `json:"initial_story_state"`
 	CurrentDirection  Direction         `json:"current_direction"`
 }
@@ -70,9 +71,22 @@ type RelationshipState struct {
 	Description string   `json:"description"`
 }
 type Direction struct {
+	// CurrentPosition 是依据正式历史作出的阶段判断，不是另一份世界事实或下一章任务。
+	CurrentPosition   string `json:"current_position"`
 	Focus             string `json:"focus"`
 	DesiredShift      string `json:"desired_shift"`
 	ReaderExpectation string `json:"reader_expectation"`
+}
+
+// SpineStage 描述当前全书路径中的一项关键变化及其因果作用。
+// Spine 由 Architect 一次建立，后续只读；它是长期创作参照，不是已经发生的事实。
+// 不使用阶段游标、完成比例或逐章事件来驱动正文。
+// ExitEvidence 描述哪些表现能够支持变化已经成立；是否充分仍由 Director 结合正式历史判断。
+type SpineStage struct {
+	From         string `json:"from"`
+	To           string `json:"to"`
+	WhyItMatters string `json:"why_it_matters"`
+	ExitEvidence string `json:"exit_evidence"`
 }
 
 // DirectorAction 描述 Story Director 对当前阶段方向的处理方式。
@@ -85,7 +99,7 @@ const (
 	DirectorReplace DirectorAction = "REPLACE"
 )
 
-// DirectorDecision 只维护跨越若干章节的阶段方向。
+// DirectorDecision 只维护跨越若干章节的方向，不修改 Architect 建立的 Core 或 Spine。
 // 它没有 story_status，也不携带逐章意图，避免阶段角色取得完结权或退化为逐章规划器。
 type DirectorDecision struct {
 	Action    DirectorAction `json:"action"`
@@ -93,7 +107,7 @@ type DirectorDecision struct {
 	Reason    string         `json:"reason"`
 }
 
-// DirectionReview 是一次已经基于正式历史完成的阶段复查记录。
+// DirectionReview 是一次已经基于正式历史完成的阶段方向复查记录。
 // AfterChapter 与 Version 都是系统审计元数据，不进入 Director 的故事判断输入。
 type DirectionReview struct {
 	AfterChapter int              `json:"after_chapter"`
@@ -186,6 +200,7 @@ type ChapterCommit struct {
 type State struct {
 	Chapter                       int               `json:"chapter"`
 	Story                         CurrentStoryState `json:"current_story_state"`
+	StorySpine                    []SpineStage      `json:"story_spine"`
 	Direction                     Direction         `json:"current_direction"`
 	DirectionVersion              int               `json:"direction_version"`
 	DirectionReviewedAfterChapter int               `json:"direction_reviewed_after_chapter"`

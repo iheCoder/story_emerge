@@ -3,11 +3,67 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"story_emerge/internal/story"
 )
+
+func TestDirectionReviewPreservesSpineAcrossCheckpointFailure(t *testing.T) {
+	// 场景：Director 调整当前位置，审计文件成功，但 checkpoint 目录暂时不可写。
+	// 预期：失败后旧方向仍生效；重试仅更新方向与复查元数据，固定 Spine 始终保留。
+	files := preparedStore(t)
+	commit := acceptedCommit()
+	commit.Review.StoryComplete = false
+	chapter := "# 第1章 选择\n\n他决定和朋友一起面对后果。"
+	before, err := files.CommitChapter(chapter, commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := before.Direction
+	updated.CurrentPosition = "合作意愿已形成，实际共同承担尚待展开"
+	review := story.DirectionReview{AfterChapter: 1, Version: 2, Decision: story.DirectorDecision{
+		Action: story.DirectorAdjust, Direction: updated, Reason: "第1章主动形成了合作意愿",
+	}}
+
+	// 只禁止替换 checkpoint；旧文件保持可读，让故障发生在审计写入之后。
+	directory := files.path("checkpoints")
+	if err := os.Chmod(directory, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0755) })
+	if _, err := files.CommitDirectionReview(review); err == nil {
+		t.Fatal("不可写 checkpoint 却完成了规划提交")
+	}
+	if _, err := os.Stat(files.path(directionReviewPath(1))); err != nil {
+		t.Fatalf("故障未发生在审计写入之后: %v", err)
+	}
+	reopened := New(files.Root())
+	after, err := reopened.LoadState()
+	if err != nil || !reflect.DeepEqual(after, before) {
+		t.Fatalf("先行审计污染正式状态: %#v %v", after, err)
+	}
+
+	// 清除故障，用新 Store 重试同一章的规划提交；正文、HEAD 与事实始终不动。
+	if err := os.Chmod(directory, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.CommitDirectionReview(review); err != nil {
+		t.Fatal(err)
+	}
+	after, err = New(files.Root()).LoadState()
+	expected := before
+	expected.Direction = updated
+	expected.DirectionVersion, expected.DirectionReviewedAfterChapter = 2, 1
+	if err != nil || !reflect.DeepEqual(after, expected) {
+		t.Fatalf("重试没有整体更新规划: %#v %v", after, err)
+	}
+	saved, err := reopened.LoadChapter(1)
+	if err != nil || saved != chapter {
+		t.Fatalf("规划修正改写了正文: %q %v", saved, err)
+	}
+}
 
 func preparedStore(t *testing.T) *Store {
 	t.Helper()
@@ -18,7 +74,7 @@ func preparedStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	core := story.StoryCore{StoryEngine: story.StoryEngine{Loop: "行动产生局面", ProgressionAxis: "逐渐承担责任"}, ReaderPromises: []story.ReaderPromise{{Promise: "承诺一", PayoffShape: "经历"}, {Promise: "承诺二", PayoffShape: "选择"}, {Promise: "承诺三", PayoffShape: "结果"}}, ExperienceContract: story.ExperienceContract{TargetExperience: "真实生活"}}
-	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, CurrentDirection: story.Direction{Focus: "共同生活", DesiredShift: "逐渐信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
+	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, StorySpine: []story.SpineStage{{From: "临时相处", To: "主动信任", WhyItMatters: "共同选择需要信任", ExitEvidence: "有事时愿意主动寻求对方支持"}}, CurrentDirection: story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "逐渐信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
 		t.Fatal(err)
 	}
 	return files
@@ -106,7 +162,7 @@ func TestDirectionReviewUpdatesCurrentCheckpointWithoutAdvancingHEAD(t *testing.
 		t.Fatal(err)
 	}
 
-	updated := story.Direction{Focus: "面对后果", DesiredShift: "共同承担选择", ReaderExpectation: "读者等待选择如何改变两人的关系"}
+	updated := story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "面对后果", DesiredShift: "共同承担选择", ReaderExpectation: "读者等待选择如何改变两人的关系"}
 	next, err := files.CommitDirectionReview(story.DirectionReview{
 		AfterChapter: 1, Version: 2,
 		Decision: story.DirectorDecision{Action: story.DirectorAdjust, Direction: updated, Reason: "初步选择已经形成"},
