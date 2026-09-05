@@ -61,7 +61,7 @@ func (store *Store) CommitGenesis(genesis story.Genesis) error {
 		return err
 	}
 
-	// 存储层也执行一次幂等归一化，保证绕过 workflow 的调用仍不会写出无 ID 的人物状态。
+	// 存储层也执行一次幂等归一化，保证绕过 workflow 的调用仍不会写出无 ID 的世界事实或人物内部状态。
 	// 已经解析过的 ID 会保持不变，因此 workflow 保存的结果与最终 checkpoint 完全一致。
 	initial, err := story.ResolveInitialStateItemIDs(genesis.InitialStoryState)
 	if err != nil {

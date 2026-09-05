@@ -54,13 +54,13 @@ story_spine：
 initial_story_state：
 只保存故事开始时已经成立、未来正文不能无解释违反的事实。
 
-- world 保存客观世界事实。
-- characters 分别保存 facts、knowledge_and_beliefs、commitments_and_intentions。
+- world 保存客观世界事实，每项使用 `{id, description}`。初始化时 id 留空，由程序生成稳定 ID；description 必须有实际内容。
+- characters 的人物 id 必须非空且唯一，供关系引用，不适用内部条目 ID 留空规则；分别保存 facts、knowledge_and_beliefs、commitments_and_intentions。
   人物的猜测或错误认识必须归属于具体人物，不能写成世界真相。
   这三个字段中的每一项都是 `{id, value}`：value 只写一条可独立更新的当前状态；初始化时 id 一律返回空字符串，由程序生成稳定 ID。
   不要把数条彼此无关的事实合并成一个 value，否则后续章节无法只修改其中一条。
 - relationships 优先保存影响未来互动的关系现实。
-  条目使用稳定 id，characters 中引用的人物 id 不得重复，且都必须出现在初始 characters 中。单个人的事实、认知与承诺写入该人物字段。不要为了补齐关系参与者而额外建立人物档案。不要生成人物百科、世界百科或历史档案。
+  条目使用非空且唯一的稳定 id，不适用内部条目 ID 留空规则；characters 中引用的人物 id 不得重复，且都必须出现在初始 characters 中。单个人的事实、认知与承诺写入该人物字段。不要为了补齐关系参与者而额外建立人物档案。不要生成人物百科、世界百科或历史档案。
 
 current_direction：
 输出 current_position、focus、desired_shift 和 reader_expectation，描述当前这一段最值得发生的变化。

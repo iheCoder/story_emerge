@@ -37,7 +37,7 @@ func (engine *Engine) Initialize(ctx context.Context, project story.Project) (ge
 		return story.Genesis{}, err
 	}
 
-	// Architect 只需要表达初始状态内容，人物内部条目的稳定 ID 由程序统一生成。
+	// Architect 的世界事实和人物内部条目可留空 ID，由程序统一生成稳定标识。
 	// 先保存模型原始输出再补 ID，既保留故障证据，也保证正式 checkpoint 从一开始就可被后续 Patch 精确引用。
 	genesis.InitialStoryState, err = story.ResolveInitialStateItemIDs(genesis.InitialStoryState)
 	if err != nil {

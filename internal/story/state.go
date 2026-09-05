@@ -47,10 +47,21 @@ func ApplyPatch(current CurrentStoryState, patch StatePatch) (CurrentStoryState,
 	return cloneStoryState(next), nil
 }
 
-// ResolveInitialStateItemIDs 给 Architect 创建的人物条目分配可重放 ID。
-// 初始输出只负责内容，程序根据人物、字段和值生成 ID，避免模型发明一套难以持续引用的命名规则。
+// ResolveInitialStateItemIDs 给初始世界事实和人物内部条目补齐可重放 ID。
+// 人物和关系自身的 ID 涉及相互引用，仍由 Architect 提供，不能猜测补齐。
 func ResolveInitialStateItemIDs(state CurrentStoryState) (CurrentStoryState, error) {
 	next := cloneStoryState(state)
+
+	// 世界事实没有初态内的身份引用，空 ID 可按内容确定性生成；已有 ID 保持原样。
+	// 仅在初始化分配，后续描述变化仍按正式旧 ID 更新，不重新散列或合并事实。
+	for index := range next.World {
+		fact := &next.World[index]
+		if !nonempty(fact.ID) {
+			fact.ID = newStateItemID("world", "fact", fact.Description)
+		}
+	}
+
+	// 人物内部条目沿用原规则；末尾完整校验仍拒绝空内容、重复 ID 和非法引用。
 	for index := range next.Characters {
 		character := &next.Characters[index]
 		var err error
@@ -144,7 +155,7 @@ func resolvePatchItems(characterID, field string, current []StateItem, patch Col
 			continue
 		}
 		if !known[item.ID] && item.ID != newStateItemID(characterID, field, item.Value) {
-			return CollectionPatch[StateItem]{}, fmt.Errorf("人物 %s 的 %s 更新引用未知 ID: %s", characterID, field, item.ID)
+			return CollectionPatch[StateItem]{}, fmt.Errorf("人物 %s 的 %s 更新引用未知 ID: %s；此 ID 不在该人物的旧集合中。若修改旧条目，准确复制其旧 ID；若正文建立了独立的新条目，id 返回空字符串，不得自行生成哈希", characterID, field, item.ID)
 		}
 	}
 	return resolved, nil

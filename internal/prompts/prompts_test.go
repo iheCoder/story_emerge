@@ -9,7 +9,7 @@ import (
 func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
 	// 场景：二进制只携带当前生产角色。
 	// 预期：Director 已接入；Planner 与其他旧入口完全消失，避免被后续代码意外调用。
-	for _, name := range []string{"architect", "director", "writer", "writer_revision", "editor", "commit"} {
+	for _, name := range []string{"architect", "director", "writer", "writer_revision", "editor", "commit", "commit_correction"} {
 		if _, err := Template(name); err != nil {
 			t.Fatal(err)
 		}

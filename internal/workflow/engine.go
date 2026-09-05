@@ -266,7 +266,7 @@ func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request ll
 // jsonRepairRequest 保留原角色和 Schema，只把任务收窄为修复已有答案的格式。
 func jsonRepairRequest(request llm.Request, malformed string, decodeErr error) llm.Request {
 	request.Stage += "_format_repair"
-	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法和字段类型；不得补写原答案没有的业务信息，使输出严格符合随请求提供的 Schema。只返回 JSON。"
+	request.Instructions = "你是 JSON 结构修复器。保持原答案的业务含义，修复 JSON 语法和字段类型；不得补写原答案没有的业务信息，使输出严格符合随请求提供的 Schema。检查字段所属层级及花括号配对；输出只能包含一个完整 JSON 对象，对象闭合后立即结束，不附加括号、说明或第二个对象。"
 	request.Input = "解析错误：\n" + decodeErr.Error() + "\n\n修复下面的 JSON：\n\n" + malformed
 
 	// 格式修复不需要重新推演故事；显式 none 优先于角色配置，输出上限仍沿用原请求规则。
