@@ -9,19 +9,19 @@ import (
 )
 
 func TestRoleClientDispatchesEachRequestToItsConfiguredModel(t *testing.T) {
-	// 场景：Writer 与 Planner 分别绑定不同模型，并通过同一个 RoleClient 发起请求。
+	// 场景：Writer 与 Director 分别绑定不同模型，并通过同一个 RoleClient 发起请求。
 	// 预期：路由依据 Role 字段选择客户端，实际请求体中的 model 不会被其他角色覆盖。
 	client, err := NewRoleClient(map[string]Config{
-		RoleWriter:  {Provider: "test", Model: "writer-model", Endpoint: "https://writer.test", APIKey: "writer-key"},
-		RolePlanner: {Provider: "test", Model: "planner-model", Endpoint: "https://planner.test", APIKey: "planner-key"},
+		RoleWriter:   {Provider: "test", Model: "writer-model", Endpoint: "https://writer.test", APIKey: "writer-key"},
+		RoleDirector: {Provider: "test", Model: "director-model", Endpoint: "https://director.test", APIKey: "director-key"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for role, expectedModel := range map[string]string{
-		RoleWriter:  "writer-model",
-		RolePlanner: "planner-model",
+		RoleWriter:   "writer-model",
+		RoleDirector: "director-model",
 	} {
 		role := role
 		expectedModel := expectedModel
@@ -59,7 +59,7 @@ func TestRoleClientRejectsMissingRole(t *testing.T) {
 }
 
 func TestDirectorUsesStageReasoningDefaults(t *testing.T) {
-	// 场景：预备 Director 通过普通测试生成器独立调用，没有生产 RoleClient 解析 YAML 参数。
+	// 场景：生产 Director 通过普通测试生成器调用，没有 RoleClient 解析 YAML 参数。
 	// 预期：它采用与其他结构化判断角色一致的低强度推理和 6000 输出上限。
 	request := WithRoleDefaults(Request{Role: RoleDirector})
 	if request.ReasoningEffort != "low" || request.MaxOutputTokens != 6000 {

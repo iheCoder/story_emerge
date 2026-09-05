@@ -72,11 +72,11 @@ type RelationshipState struct {
 type Direction struct {
 	Focus             string `json:"focus"`
 	DesiredShift      string `json:"desired_shift"`
-	ReaderExpectation string `json:"reader_expectation,omitempty"`
+	ReaderExpectation string `json:"reader_expectation"`
 }
 
 // DirectorAction 描述 Story Director 对当前阶段方向的处理方式。
-// 它与 Planner 的逐章 KEEP/UPDATE 仍是两套独立契约；当前生产链尚未消费这里的决定。
+// KEEP 保持阶段惯性，ADJUST/REPLACE 只改变跨越若干章节的方向，不规划下一章事件。
 type DirectorAction string
 
 const (
@@ -86,38 +86,49 @@ const (
 )
 
 // DirectorDecision 只维护跨越若干章节的阶段方向。
-// 它没有 story_status，也不携带 Chapter Intent，避免预备组件提前取得完结权或退化为逐章规划器。
+// 它没有 story_status，也不携带逐章意图，避免阶段角色取得完结权或退化为逐章规划器。
 type DirectorDecision struct {
 	Action    DirectorAction `json:"action"`
 	Direction Direction      `json:"direction"`
 	Reason    string         `json:"reason"`
 }
 
-// ChapterIntent 允许人物、认知、情绪和读者体验上的贡献，不把每章任务化。
-type ChapterIntent struct {
-	IntendedEffect string   `json:"intended_effect"`
-	WhyNow         string   `json:"why_now"`
-	Constraints    []string `json:"constraints"`
+// DirectionReview 是一次已经基于正式历史完成的阶段复查记录。
+// AfterChapter 与 Version 都是系统审计元数据，不进入 Director 的故事判断输入。
+type DirectionReview struct {
+	AfterChapter int              `json:"after_chapter"`
+	Version      int              `json:"version"`
+	Decision     DirectorDecision `json:"decision"`
 }
-type ChapterPlan struct {
-	DirectionAction  string        `json:"direction_action"`
-	CurrentDirection *Direction    `json:"current_direction"`
-	ChapterIntent    ChapterIntent `json:"chapter_intent"`
-}
+
 type EditorAction string
 
 const (
 	EditorAccept EditorAction = "ACCEPT"
 	EditorRevise EditorAction = "REVISE_WRITER"
-	EditorReplan EditorAction = "RETURN_TO_PLANNER"
 )
 
-// Editor 只裁定正文准入和是否已经完结；输出中没有状态补丁或下一章计划。
+// EditorAssessment 强迫 Story Editor 分开说明章节贡献、序列效果和正文实现，
+// 避免先形成笼统好恶，再把同一印象复制成多个评审维度。
+type EditorAssessment struct {
+	Contribution string `json:"contribution"`
+	Sequence     string `json:"sequence"`
+	Execution    string `json:"execution"`
+}
+
+// DirectionReviewRequest 与章节是否接收正交：一章可以成立，同时暴露最近若干章的阶段性问题。
+type DirectionReviewRequest struct {
+	Requested bool   `json:"requested"`
+	Reason    string `json:"reason"`
+}
+
+// Editor 只裁定正文准入、是否请求阶段复查和是否已经完结；它不能修改事实或 Direction。
 type EditorDecision struct {
-	Action         EditorAction `json:"action"`
-	Reason         string       `json:"reason"`
-	BlockingIssues []string     `json:"blocking_issues"`
-	StoryComplete  bool         `json:"story_complete"`
+	ChapterDecision EditorAction           `json:"chapter_decision"`
+	Assessment      EditorAssessment       `json:"assessment"`
+	BlockingIssues  []string               `json:"blocking_issues"`
+	DirectionReview DirectionReviewRequest `json:"direction_review"`
+	StoryComplete   bool                   `json:"story_complete"`
 }
 
 // CollectionPatch 用相同 ID 的完整当前值完成 create/update/replace，用 remove 删除失效项。
@@ -162,27 +173,29 @@ type LedgerEntry struct {
 	Summary string `json:"summary"`
 }
 
-// ChapterCommit 将最终计划、验收和提取结果绑定到同一章；失败尝试只留在 .work。
+// ChapterCommit 将验收和事实提取绑定到同一份正文；失败尝试只留在 .work。
+// Direction 不属于章节提交，由 Architect 初始化、Director 在提交后单独维护。
 type ChapterCommit struct {
 	Chapter int            `json:"chapter"`
 	Title   string         `json:"title"`
-	Plan    ChapterPlan    `json:"plan"`
 	Review  EditorDecision `json:"review"`
 	Result  CommitResult   `json:"result"`
 }
 
-// State 是 HEAD 对应的检查点。Writer 只接收 Story，不读取方向、轨迹或全书进度。
+// State 是 HEAD 对应的检查点。Direction 元数据只保证阶段复查可恢复且不会重复执行。
 type State struct {
-	Chapter           int               `json:"chapter"`
-	Story             CurrentStoryState `json:"current_story_state"`
-	Direction         Direction         `json:"current_direction"`
-	RecentTrajectory  []TrajectoryEntry `json:"recent_trajectory"`
-	WrittenCharacters int               `json:"written_characters"`
-	Completed         bool              `json:"completed"`
+	Chapter                       int               `json:"chapter"`
+	Story                         CurrentStoryState `json:"current_story_state"`
+	Direction                     Direction         `json:"current_direction"`
+	DirectionVersion              int               `json:"direction_version"`
+	DirectionReviewedAfterChapter int               `json:"direction_reviewed_after_chapter"`
+	RecentTrajectory              []TrajectoryEntry `json:"recent_trajectory"`
+	WrittenCharacters             int               `json:"written_characters"`
+	Completed                     bool              `json:"completed"`
 }
 
 // LengthGoal 将现有产品篇幅选择解释成全书软目标，不分配章节数或单章字数。
-// 用户在 User Idea 明确指定的篇幅优先，由 Architect/Planner 按原始授权理解。
+// 用户在 User Idea 明确指定的篇幅优先，由 Architect 按原始授权建立 Core，Director 维护阶段取舍。
 func LengthGoal(profile string) string {
 	switch profile {
 	case "short":

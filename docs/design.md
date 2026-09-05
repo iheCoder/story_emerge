@@ -1,73 +1,79 @@
-# Novel Agent V2：动态状态驱动的中篇生成
+# Novel Agent：按叙事尺度分工的中篇生成
 
-本实现依据本次设计讨论落地，目标为约 8～10 万字中篇。保留 Writer 不读取 User Idea 的边界，暂不加入“本章必要上下文”、向量记忆或历史片段补充机制。
+本实现面向约 8～10 万字中文小说。系统不使用固定 Outline 或逐章 Planner，而是让 Architect、Director、Writer、Editor 与 Commit 分别处理整本身份、阶段方向、单章创作、阅读序列判断和事实记录。
 
 ## 创作信息
 
-- Story Core 只保留 Story Engine（循环与累积方向）、Reader Promises（承诺与真正兑现的方式）、Experience Contract（体验、表达原则、漂移边界）。初始化后不自动修改。
-- Current Story State 分为世界事实、人物事实/认知/承诺、人际关系。它保存当前仍有效的结果，不保存事件流水。知识或猜测必须归属于人物。
-- Current Direction 只有 focus 和 desired_shift，由 Planner 持续保持或更新，不分配章节数或固定事件。
-- Recent Trajectory 保留最近五章的 story_move 与 narrative_shape，如实描述文本承担的功能，不评分。允许“主要是认知推进”或“日常情绪承接”。
-- Chapter Ledger 从全部已提交章节提取记录投影出章节号、标题、短摘要，不另建可能失配的全局可变文件。
+- Story Core 保存 Story Engine、Reader Promises 与 Experience Contract。它定义“这是一本什么小说”，初始化后没有逐章改写入口。
+- Current Story State 保存当前仍有效的世界事实、人物事实/认知/承诺及关系，不保存事件流水。人物猜测必须归属于人物。
+- Current Direction 由 focus、desired_shift、reader_expectation 组成，描述未来若干章节共同工作的故事区域、希望形成的累积变化及读者正在等待的阶段发展。
+- Recent Trajectory 保留最近五章的 story_move 与 narrative_shape，只记录实际怎样移动，不评价好坏。
+- Chapter Ledger 从 HEAD 范围内的全部章节提交记录投影出章节号、标题和短摘要，不维护另一份可变全局文件。
 
-原始 User Idea 原样存在 project.json，是最高创作授权。初始事实与用户希望未来发生的事情必须区分；未来要求不能提前成为当前事实。
+User Idea 原样保存在 project.json，只进入一次性的 Story Architect。其他角色依赖 Architect 建立的 Core，不通过反复读取原始想法重新解释创作授权。
 
 ## 职责与输入
 
 | 节点 | 输入 | 交付与权限 |
 |---|---|---|
-| Story Architect | User Idea、全书篇幅目标 | 一次性 Core、初态、方向与书名 |
-| Chapter Planner | 原始授权、Core、当前事实、方向、近期轨迹、全部 Ledger、上一章、篇幅进度、可能的退回原因 | KEEP/UPDATE 方向与本章 Intent；唯一的未来方向决策者 |
-| Writer | Core、当前事实、Intent、上一章、全书篇幅目标、下一章编号 | 自主写场景、事件、对白和路径；不读取 User Idea、方向、轨迹或 Ledger |
-| Editor | 原始授权、Core、当前事实、方向、轨迹、Intent、上一章、Draft、篇幅进度、已有 Ledger | 正文准入与完结确认；Ledger 只补足全书兑现判断，不另建上下文选择机制 |
-| Commit | 旧当前事实与已接受正文 | 事实补丁、轨迹与短摘要；没有规划、评价或完结权限 |
+| Story Architect | User Idea、全书篇幅目标 | 一次性书名、Core、初态和初始 Direction |
+| Story Director | Core、当前事实、Direction、近期轨迹、全部 Ledger、篇幅进度、可选 Editor 请求 | KEEP / ADJUST / REPLACE 阶段 Direction；不规划下一章、不判断完结 |
+| Writer | Core、当前事实、Direction、近期轨迹、上一章、全书篇幅目标、下一章编号 | 自主决定本章局部发展并写正文；不读取 User Idea 或 Ledger |
+| Story Editor | Core、当前事实、Direction、近期轨迹、最近正文、Draft、篇幅进度、全部 Ledger | ACCEPT / REVISE_WRITER、可选阶段复查请求及完结确认；不规划下一章 |
+| Commit | 旧当前事实、已接受正文 | 事实补丁、轨迹和短摘要；不读取 Direction，不评价、不规划 |
 
-修订 Writer 使用相同输入白名单，额外接收当前草稿和最多三个阻断问题。它不会收到 Editor 的完整输入。每个模型职责可独立配置供应商和模型。
+Writer 是 Local Planner + Prose Writer。Direction 是跨章战略导航，不是本章 checklist；Writer 无需在一章内完成 desired_shift，也无需同时触及所有 Core Promise。安静日常、陪伴、关系、气氛和情绪承接仍可形成有效章节贡献。
 
-### 预备但未接线的 Story Director
+Editor 分开判断 contribution、sequence 与 execution。它评价的是“本章放进最近故事序列后是否成立”，而不是是否完成整段 Direction。章节准入和 Direction 复查请求是两个正交维度：一章可以 ACCEPT，同时请求 Director 从下一章起调整阶段方向。
 
-代码库已经提供 Story Director 的 Prompt、严格输出 Schema、领域校验和独立生成方法，用于审查未来若干章节共同遵循的阶段方向。它只返回 KEEP / ADJUST / REPLACE、三字段 Direction（focus、desired_shift、reader_expectation）和审计原因；不规划下一章具体事件，也不输出 `story_status`。
+## 生产闭环
 
-该组件当前没有生产调用方。章节循环仍是 Planner → Writer → Editor → Commit，Planner 仍维护现行两字段 Direction，Writer 和 Editor 的输入没有变化，只有 Editor 可以确认完结。Director 的模型配置因此可选，未配置时不影响现有启动和写作流程；触发时机、Direction 提交边界及其他角色如何消费其结果留到真正接线时再设计。
+```text
+Story Architect（一次）
+        ↓
+Core + Initial State + Current Direction
+        ↓
+Writer（自主局部规划并写章）
+        ↓
+Story Editor
+   ├── REVISE_WRITER → Writer 修订 → 再评审
+   └── ACCEPT
+          ↓
+        Commit
+          ├── Current Story State
+          ├── Recent Trajectory
+          └── Chapter Ledger
+          ↓
+满足阶段复查条件？
+   ├── 否 → 下一章 Writer
+   └── 是 → Story Director → 正式 Current Direction → 下一章 Writer
+```
 
-推理强度和输出上限同样按角色配置，正常生成的预算不再散落在业务方法中。Commit 默认 reasoning_effort=none、max_output_tokens=24000；其余角色默认值见 README。格式修复明确关闭思考，并使用原角色的输出上限。Engine 在日志记录及请求发出之前解析最终参数。
+正常每三个 ACCEPT 章节，在第 3、6、9……章 Commit 之后调用一次 Director。Editor 也可以在某一章 ACCEPT 时请求提前复查。Director 必须看到最新正式 State、Trajectory 与 Ledger，因此不能在 Commit 前运行。
 
-## 每章的决策循环
+Director 默认优先 KEEP。ADJUST 用于同一阶段内的有限修正；REPLACE 只用于阶段已经完成、失效，或继续保持会稳定制造重复、停滞或 Core 漂移的情况。Director 的 reason 只用于审计，不提供给 Writer。
 
-Planner 先保持或更新 Direction，再输出 Chapter Intent：intended_effect、why_now、最多两条必要 constraints。意图描述叙事效果，允许局势变化，也允许关系、理解、气氛、日常和情绪承接。
+Editor 只返回 ACCEPT 或 REVISE_WRITER。结构性实现问题仍由 Writer 在相同正式上下文下重新选择局部发展；系统不存在 RETURN_TO_PLANNER。持续失败由取消信号或全项目调用预算停止，预算耗尽不能自动接受正文。
 
-Already-True Test 比较“本章想产生的效果是否已经实现”，区分世界事实、人物知道什么和读者体验到什么。信息在 User Idea 中出现，不代表人物或读者已经知道；开篇把设定写成可感知场景也有价值。
+## Direction 与章节提交边界
 
-Writer 自主实现意图。Editor 检查连续性、章节价值、因果可信度及足以阻断正文成立的执行问题。“删除后主线仍能继续”只是辅助问题，不能自动否决安静章节。判断依据必须来自正文，不能依靠“加深关系”等标签。
+章节 Commit 与 Direction Review 是两类独立事务：
 
-Editor 返回 ACCEPT、REVISE_WRITER 或 RETURN_TO_PLANNER。每个意图最多允许两次 Writer 修订，第三稿仍须接受审核。未通过则回到 Planner，绝不自动接受。全项目调用预算与取消信号终止持续失败的循环，不增加另一套文学配额。
+- Chapter Commit 写正文、Editor 判断、事实提取和下一份 checkpoint，最后推进 HEAD。它不能改变 Direction。
+- Direction Review 在当前 HEAD 的 checkpoint 上更新 Direction、版本号和最近复查章号，不推进 HEAD，也不改写正文、事实、轨迹或 Ledger。
 
-规划和修订期间一直使用同一份已提交事实。候选方向只有随最终接受的章节才生效；失败尝试不能改变事实、字数或完结状态。
+Director 在章节提交后失败时，该章节已经是正式历史，旧 Direction 仍然有效。下一次运行先从当前 HEAD 重试 Director；成功后才允许 Writer 写下一章。这样既不重写已接受正文，也不会跳过阶段判断。`.work` 只保存诊断产物，正式决定另存于 `direction-reviews/` 并写入 checkpoint。
 
-代码按职责组织：`chapter.go` 协调规划尝试；`context.go` 组装正式历史输入；`draft.go` 执行同一意图下的写作、评审和最多两次修订；`planner.go` 构造重规划反馈；`commit.go` 归并最终方向并提取、提交。上下文权限与阶段调用顺序不因职责拆分改变。
+## 当前事实与完结
 
-Web 的“继续生长”入口不以三章试读完成为前提：已初始化、未完结且空闲时即可逐章生成。刷新和服务重启后仍依据正式状态开放；同一项目正在生成时拒绝重复启动。中断后的未提交章重新经过整章流程，`.work` 仅用于诊断，暂不实现阶段恢复。
+每类事实集合使用稳定 ID 和 upsert/remove。upsert 创建或完整替换当前值，remove 删除失效项；未触碰条目保留。空补丁合法，所有修改在副本上完成，校验失败不改变旧状态。
 
-## 当前状态与提交
+只有 ACCEPT 正文进入 Commit。严格 Schema 与本地校验负责字段、ID、引用、动作和提交边界，不把文学判断编码成分数或固定题材规则。
 
-每类事实集合使用稳定 ID 和 upsert/remove。upsert 对新 ID 创建条目，对已有 ID 完整替换当前值，覆盖 create/update/replace；remove 删除失效项。未触碰条目保留，人物认知数组不无限拼接。
+全书目标篇幅和已提交字符数只提供给 Director 与 Editor 作为取舍依据，不自动切换阶段或结束故事。只有 Editor 对 ACCEPT 正文给出的 story_complete 能确认完结；Director、Writer 与 Commit 都没有完结权限。
 
-同一补丁可以新增人物及其关系，或一起移除人物和失效关系；应用完三类集合后检查所有引用。空补丁合法。所有修改在副本上进行，校验失败不影响旧事实。
+## 恢复与产品入口
 
-只有 ACCEPT 正文进入提取。程序核验提取字段、ID、引用与枚举，不通过规则猜测小说语义。严格 Schema 与本地结构验证一起防止缺字段被 Go 零值吞掉；缺少业务信息时直接失败，格式修复不能编造事实。
+Web 的“继续生长”不以三章试读完成为前提：项目已初始化、未完结且空闲时即可逐章生成。中断的未提交章重新从 Writer 开始；如果章节已经提交、只是 Director 失败，则先补做 Direction Review。
 
-正式提交依次写章节正文、最终计划/验收/提取记录、下一份检查点，最后原子替换 HEAD。所有读取与导出受 HEAD 限制。Core 不在逐章输出或更新协议中。
-
-## 篇幅与完结
-
-Planner 得到全书目标及已提交正文字数；字符统计只计算正文汉字、字母和数字，不含标题、空白、标点。目标影响规划取舍，不触发程序化阶段切换或强制结束。
-
-Planner 在 Direction/Intent 中决定收束，Writer 写出结果。Editor 结合既有 Ledger 和当前正文确认核心承诺是否按 payoff_shape 兑现、本书需要交代的结果是否有合适落点；证据不足不确认完结。开放结局允许保留余味和未知。
-
-只有 ACCEPT 判断中的 story_complete 可以设置检查点 completed。Commit 没有这个输出字段；程序在整章提交成功后停止。没有“字数到了即完结”的分支。
-
-## 删除与保留
-
-生产代码已删除 Bible、Outline、Reader、Live Tension、Arc Review/Exit、旧状态和自动 Finalize。依赖这些接口的旧实验 Go 执行器一并删除，历史报告和小说产物不作为生产入口。
-
-保留普通 Go 工作流、文件检查点、统一模型调用/用量链路和既有书架阅读界面。不迁移旧项目格式，不同时运行两套生产架构。
+生产不迁移旧 Planner 格式，不同时运行两套架构。旧实验报告和小说产物可以保留作为历史证据，但不定义当前运行协议。

@@ -7,19 +7,19 @@ import (
 )
 
 func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
-	// 场景：二进制应携带当前生产角色，以及已经实现但尚未接线的 Story Director 契约。
-	// 预期：Director 可以被独立调用；旧 Reader/Arc/Finalize 入口完全消失，避免被后续代码意外调用。
-	for _, name := range []string{"architect", "planner", "director", "writer", "writer_revision", "editor", "commit"} {
+	// 场景：二进制只携带当前生产角色。
+	// 预期：Director 已接入；Planner 与其他旧入口完全消失，避免被后续代码意外调用。
+	for _, name := range []string{"architect", "director", "writer", "writer_revision", "editor", "commit"} {
 		if _, err := Template(name); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"reader", "architect_replan", "editor_finalize", "arc_review", "editor_local"} {
+	for _, name := range []string{"planner", "reader", "architect_replan", "editor_finalize", "arc_review", "editor_local"} {
 		if _, err := Template(name); err == nil {
 			t.Fatalf("旧角色仍嵌入: %s", name)
 		}
 	}
-	for _, name := range []string{"genesis", "chapter_plan", "director_decision", "editor_decision", "chapter_commit"} {
+	for _, name := range []string{"genesis", "director_decision", "editor_decision", "chapter_commit"} {
 		data, err := Schema(name)
 		if err != nil {
 			t.Fatal(err)
@@ -33,7 +33,7 @@ func TestOnlyCurrentRolesAndSchemasAreEmbedded(t *testing.T) {
 }
 
 func TestDirectorContractHasNoStoryStatusOrChapterPlan(t *testing.T) {
-	// 场景：Story Director 只是预备的阶段方向维护者，不能提前取得完结判断或逐章规划职责。
+	// 场景：Story Director 是阶段方向维护者，不能取得完结判断或逐章规划职责。
 	// 预期：Prompt 与 Schema 都不存在 story_status，且 Prompt 明确禁止生成下一章计划和具体事件。
 	template, err := Template("director")
 	if err != nil {

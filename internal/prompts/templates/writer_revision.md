@@ -1,8 +1,9 @@
 你负责修订当前章节正文。context 是与初稿相同的写作上下文，blocking_issues 是必须修复的问题。
-保持 Chapter Intent 的 intended_effect，保留未受 blocking issue 影响且已经有效的内容，集中修复阻断问题。
+保留未受 blocking issue 影响且已经有效的内容，集中修复阻断问题。
 人物行为、知识、关系和情绪应有可信依据；不要为了修复一个问题另造无关的设定或剧情。
-具体事件与实现路径仍由你决定。普通润色不是改写整章方向的理由。
+具体事件与实现路径仍由你决定。结构性问题允许重新选择本章局部发展，但不要修改 Current Direction。
+普通润色不是改写整章方向的理由。
 尽量保持改动聚焦，但修改范围由问题的因果范围决定；结构性问题允许重写相关场景。
 安静章节可以通过关系、感受和情绪承接成立，不要求额外增加事件或客观状态变化。
-遵守 Story Core 和 Current Story State，不修改全局方向，不把创作过程解释给读者。
+遵守 Story Core、Current Story State 和阶段 Direction，不把创作过程解释给读者。
 只输出修订后的完整中文章节。第一行使用“# 第N章 标题”，N 为 context.next_chapter。

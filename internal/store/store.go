@@ -45,7 +45,7 @@ func (store *Store) Prepare(project story.Project) error {
 	if len(entries) != 0 {
 		return fmt.Errorf("输出目录已存在且非空: %s", store.root)
 	}
-	for _, dir := range []string{"chapters", "commits", "checkpoints", ".work"} {
+	for _, dir := range []string{"chapters", "commits", "checkpoints", "direction-reviews", ".work"} {
 		if err := os.MkdirAll(store.path(dir), 0755); err != nil {
 			return err
 		}
@@ -159,12 +159,32 @@ func (store *Store) LoadLedger() ([]story.LedgerEntry, error) {
 		if err := store.readJSON(commitPath(number), &commit); err != nil {
 			return nil, err
 		}
-		if commit.Chapter != number || commit.Review.Action != story.EditorAccept {
+		if commit.Chapter != number || commit.Review.ChapterDecision != story.EditorAccept {
 			return nil, fmt.Errorf("第 %d 章提交记录无效", number)
 		}
 		entries = append(entries, story.LedgerEntry{Chapter: number, Title: commit.Title, Summary: commit.Result.ChapterSummary})
 	}
 	return entries, nil
+}
+
+// LoadCommit 只读取 HEAD 范围内的正式章节提交。Director 用它恢复最后一章随 ACCEPT
+// 一起保存的提前复查请求，不能从 .work 中读取失败稿件的评审意见。
+func (store *Store) LoadCommit(number int) (story.ChapterCommit, error) {
+	head, err := store.loadHEAD()
+	if err != nil {
+		return story.ChapterCommit{}, err
+	}
+	if number < 1 || number > head {
+		return story.ChapterCommit{}, fmt.Errorf("第 %d 章尚未提交", number)
+	}
+	var commit story.ChapterCommit
+	if err := store.readJSON(commitPath(number), &commit); err != nil {
+		return story.ChapterCommit{}, err
+	}
+	if commit.Chapter != number {
+		return story.ChapterCommit{}, fmt.Errorf("第 %d 章提交记录章节号无效", number)
+	}
+	return commit, nil
 }
 
 // CommitChapter 自行从 HEAD 计算下一份状态，调用者不能传入一个与补丁不一致的快照。
@@ -195,6 +215,27 @@ func (store *Store) CommitChapter(chapter string, commit story.ChapterCommit) (s
 		return story.State{}, err
 	}
 	if err := store.writeText("HEAD", fmt.Sprintf("%03d\n", next.Chapter)); err != nil {
+		return story.State{}, err
+	}
+	return next, nil
+}
+
+// CommitDirectionReview 在当前 HEAD 对应的检查点上原子更新 Direction，不创建新章节也不移动 HEAD。
+// 先写审计记录再替换检查点；若检查点写入失败，旧 Direction 仍是正式状态，下次运行会重新复查。
+func (store *Store) CommitDirectionReview(review story.DirectionReview) (story.State, error) {
+	current, err := store.LoadState()
+	if err != nil {
+		return story.State{}, err
+	}
+	next, err := story.ApplyDirectionReview(current, review)
+	if err != nil {
+		return story.State{}, err
+	}
+
+	if err := store.writeJSON(directionReviewPath(review.AfterChapter), review); err != nil {
+		return story.State{}, err
+	}
+	if err := store.writeJSON(checkpointPath(current.Chapter), next); err != nil {
 		return story.State{}, err
 	}
 	return next, nil
@@ -368,3 +409,6 @@ func (store *Store) path(relative string) string {
 func chapterPath(number int) string    { return fmt.Sprintf("chapters/%03d.md", number) }
 func commitPath(number int) string     { return fmt.Sprintf("commits/%03d.json", number) }
 func checkpointPath(number int) string { return fmt.Sprintf("checkpoints/%03d.json", number) }
+func directionReviewPath(number int) string {
+	return fmt.Sprintf("direction-reviews/%03d.json", number)
+}

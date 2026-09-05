@@ -6,36 +6,34 @@ import (
 	"story_emerge/internal/story"
 )
 
-// Editor 的输入单独构造，避免复用 Planner 输入而意外引入扩展上下文。
-// 原始用户要求仅在这里与 Planner/Architect 可见，不传给 Writer。
+// Editor 的输入单独构造。User Idea 只由 Architect 消费；Editor 根据已经建立的 Core、
+// 正式历史与实际正文判断章节是否成立，不能越过 Core 重新解释原始创作授权。
 type editorInput struct {
-	UserIdea          string                  `json:"user_idea"`
 	StoryCore         story.StoryCore         `json:"story_core"`
 	CurrentStoryState story.CurrentStoryState `json:"current_story_state"`
 	CurrentDirection  story.Direction         `json:"current_direction"`
 	RecentTrajectory  []story.TrajectoryEntry `json:"recent_trajectory"`
-	ChapterIntent     story.ChapterIntent     `json:"chapter_intent"`
-	PreviousChapter   string                  `json:"previous_chapter"`
+	RecentChapters    []string                `json:"recent_chapters"`
 	Draft             string                  `json:"draft"`
 	LengthProgress    lengthProgress          `json:"length_progress"`
 	ChapterLedger     []story.LedgerEntry     `json:"chapter_ledger"`
 }
 
-// reviewDraft 评价某一版正文，返回 ACCEPT、REVISE 或 REPLAN；它本身不修改正式状态。
-func (engine *Engine) reviewDraft(ctx context.Context, base plannerInput, direction story.Direction, intent story.ChapterIntent, chapter string, attempt, draft int) (story.EditorDecision, error) {
-	// Editor 需要对照用户要求与历史评审正文；候选方向取本轮 Planner 的结果，而非旧方向。
-	// 输入独立组装，不把规划反馈等额外信息随整个 base 一起透传。
+// reviewDraft 评价某一版正文，返回 ACCEPT 或 REVISE_WRITER；它本身不修改正式状态。
+func (engine *Engine) reviewDraft(ctx context.Context, base chapterContext, chapter string, draft int) (story.EditorDecision, error) {
+	// Direction 是多章导航，不是本章必须完成的 Intent。Editor 评价本章是否形成自然贡献，
+	// 并可独立请求 Commit 后的阶段复查，但不能直接修改 Direction。
 	input, err := asPrettyJSON(editorInput{
-		UserIdea: base.UserIdea, StoryCore: base.StoryCore, CurrentStoryState: base.CurrentStoryState,
-		CurrentDirection: direction, RecentTrajectory: base.RecentTrajectory, ChapterIntent: intent,
-		PreviousChapter: base.PreviousChapter, Draft: chapter, LengthProgress: base.LengthProgress, ChapterLedger: base.ChapterLedger,
+		StoryCore: base.StoryCore, CurrentStoryState: base.CurrentStoryState,
+		CurrentDirection: base.CurrentDirection, RecentTrajectory: base.RecentTrajectory,
+		RecentChapters: base.RecentChapters, Draft: chapter, LengthProgress: base.LengthProgress, ChapterLedger: base.ChapterLedger,
 	})
 	if err != nil {
 		return story.EditorDecision{}, err
 	}
 
 	// 规划尝试和草稿版本都进入阶段名，使评审结论能对应到具体正文版本。
-	stage := chapterStage(base.NextChapter, "editor", attempt, draft)
+	stage := chapterStage(base.NextChapter, "editor", draft)
 	decision, err := generateJSON[story.EditorDecision](ctx, engine, stage, llm.RoleEditor, "editor", "editor_decision", input)
 	if err != nil {
 		return decision, err

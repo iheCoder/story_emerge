@@ -42,9 +42,9 @@ func (engine *Engine) extractAccepted(ctx context.Context, number int, previous 
 	return result, story.ValidateCommitResult(result)
 }
 
-// commitReviewedChapter 将本轮 ACCEPT 正文提取为事实，并连同最终计划和评审一起提交。
+// commitReviewedChapter 将本轮 ACCEPT 正文提取为事实，并连同评审一起提交。
 // 这是单次运行内的提交步骤，不提供阶段恢复；失败后下次运行从正式 HEAD 继续生成。
-func (engine *Engine) commitReviewedChapter(ctx context.Context, current story.State, plan story.ChapterPlan, direction story.Direction, chapter string, review story.EditorDecision) (story.State, error) {
+func (engine *Engine) commitReviewedChapter(ctx context.Context, current story.State, chapter string, review story.EditorDecision) (story.State, error) {
 	// Commit 只接收旧事实与正文。提取失败直接返回原状态，不把 ACCEPT 当作章节已经完成。
 	number := current.Chapter + 1
 	result, err := engine.extractAccepted(ctx, number, current.Story, chapter)
@@ -52,16 +52,10 @@ func (engine *Engine) commitReviewedChapter(ctx context.Context, current story.S
 		return current, err
 	}
 
-	// 最后一次 KEEP 可能沿用了较早尝试更新的方向，必须与旧 HEAD 比较后归并到提交计划。
-	// plan 是局部副本，这里的 UPDATE 不会改写之前保存的规划诊断文件。
-	if direction != current.Direction {
-		plan.DirectionAction = "UPDATE"
-		plan.CurrentDirection = &direction
-	}
 	title, _, _ := strings.Cut(strings.TrimSpace(chapter), "\n")
 	next, err := engine.store.CommitChapter(chapter, story.ChapterCommit{
 		Chapter: number, Title: strings.TrimSpace(strings.TrimPrefix(title, "# ")),
-		Plan: plan, Review: review, Result: result,
+		Review: review, Result: result,
 	})
 	if err != nil {
 		return current, err

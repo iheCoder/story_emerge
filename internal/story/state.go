@@ -10,7 +10,10 @@ import (
 const RecentTrajectoryLimit = 5
 
 func NewInitialState(genesis Genesis) State {
-	return State{Story: cloneStoryState(genesis.InitialStoryState), Direction: genesis.CurrentDirection, RecentTrajectory: []TrajectoryEntry{}}
+	return State{
+		Story: cloneStoryState(genesis.InitialStoryState), Direction: genesis.CurrentDirection,
+		DirectionVersion: 1, RecentTrajectory: []TrajectoryEntry{},
+	}
 }
 
 // ApplyPatch 在副本上替换当前值。所有集合更新后才校验关系引用，因此同一补丁可以
@@ -262,19 +265,16 @@ func applyCollection[T any](current []T, patch CollectionPatch[T], id func(T) st
 	return result, nil
 }
 
-// ApplyChapter 是正式状态唯一的推进入口。先核验 ACCEPT，再应用提取结果；
-// Planner 只决定 Direction，Editor 只确认完结，Commit 无权覆盖这两项。
+// ApplyChapter 是正式章节状态的推进入口。先核验 ACCEPT，再应用提取结果；
+// Editor 只确认准入与完结，Commit 无权覆盖 Architect/Director 拥有的 Direction。
 func ApplyChapter(current State, chapter string, commit ChapterCommit) (State, error) {
 	if current.Completed || commit.Chapter != current.Chapter+1 {
 		return State{}, fmt.Errorf("不能向已完成故事或错误章节提交")
 	}
-	if err := ValidatePlan(commit.Plan); err != nil {
-		return State{}, err
-	}
 	if err := ValidateEditorDecision(commit.Review); err != nil {
 		return State{}, err
 	}
-	if commit.Review.Action != EditorAccept {
+	if commit.Review.ChapterDecision != EditorAccept {
 		return State{}, fmt.Errorf("只有 ACCEPT 正文可以提交")
 	}
 	if err := ValidateCommitResult(commit.Result); err != nil {
@@ -291,14 +291,40 @@ func ApplyChapter(current State, chapter string, commit ChapterCommit) (State, e
 	next := current
 	next.Story = nextStory
 	next.Chapter = commit.Chapter
-	if commit.Plan.CurrentDirection != nil {
-		next.Direction = *commit.Plan.CurrentDirection
-	}
 	next.Completed = commit.Review.StoryComplete
 	next.WrittenCharacters += CountCharacters(chapter)
 	next.RecentTrajectory = append(append([]TrajectoryEntry{}, current.RecentTrajectory...), TrajectoryEntry{Chapter: commit.Chapter, TrajectoryMove: commit.Result.TrajectoryEntry})
 	if len(next.RecentTrajectory) > RecentTrajectoryLimit {
 		next.RecentTrajectory = next.RecentTrajectory[len(next.RecentTrajectory)-RecentTrajectoryLimit:]
+	}
+	return next, ValidateState(next)
+}
+
+// ApplyDirectionReview 在同一章检查点上提交 Director 结论，不推进章节号、正文或事实。
+// KEEP 只记录已经复查过该检查点；ADJUST/REPLACE 才产生新的 Direction 版本。
+func ApplyDirectionReview(current State, review DirectionReview) (State, error) {
+	if current.Completed || current.Chapter < 1 || review.AfterChapter != current.Chapter {
+		return State{}, fmt.Errorf("不能在已完结故事或错误章节提交 Direction Review")
+	}
+	if current.DirectionReviewedAfterChapter >= review.AfterChapter {
+		return State{}, fmt.Errorf("第 %d 章后的 Direction 已经复查", review.AfterChapter)
+	}
+	if err := ValidateDirectorDecision(current.Direction, review.Decision); err != nil {
+		return State{}, err
+	}
+
+	next := current
+	next.Direction = review.Decision.Direction
+	next.DirectionReviewedAfterChapter = review.AfterChapter
+	if review.Decision.Action == DirectorKeep {
+		if review.Version != current.DirectionVersion {
+			return State{}, fmt.Errorf("KEEP 不能增加 Direction 版本")
+		}
+	} else {
+		if review.Version != current.DirectionVersion+1 {
+			return State{}, fmt.Errorf("Direction 变更必须顺序增加版本")
+		}
+		next.DirectionVersion = review.Version
 	}
 	return next, ValidateState(next)
 }

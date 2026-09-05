@@ -219,11 +219,15 @@
         },
         "desired_shift": {
           "type": "string"
+        },
+        "reader_expectation": {
+          "type": "string"
         }
       },
       "required": [
         "focus",
-        "desired_shift"
+        "desired_shift",
+        "reader_expectation"
       ],
       "additionalProperties": false
     }

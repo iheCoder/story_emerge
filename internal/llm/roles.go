@@ -9,15 +9,14 @@ import (
 // 工作流长期角色名称由配置和请求共同使用，避免角色路由依赖阶段字符串猜测。
 const (
 	RoleArchitect = "architect"
+	RoleDirector  = "director"
 	RoleWriter    = "writer"
 	RoleEditor    = "editor"
-	RolePlanner   = "planner"
-	RoleDirector  = "director"
 	RoleCommit    = "commit"
 )
 
 // RoleClient 按工作流角色持有独立的模型客户端。
-// 同一角色的重规划、修订和格式修复请求都会复用该角色的客户端配置。
+// 同一角色的修订和格式修复请求都会复用该角色的客户端配置。
 type RoleClient struct {
 	clients map[string]*Client
 }
@@ -99,7 +98,7 @@ func WithRoleDefaults(request Request) Request {
 		switch request.Role {
 		case RoleArchitect:
 			request.MaxOutputTokens = 16000
-		case RolePlanner, RoleDirector, RoleEditor:
+		case RoleDirector, RoleEditor:
 			request.MaxOutputTokens = 6000
 		case RoleWriter:
 			request.MaxOutputTokens = 12000

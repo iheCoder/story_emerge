@@ -27,7 +27,7 @@ type Event struct {
 // Reporter 允许入口层订阅进度；Engine 在无 reporter 时仍可无界面运行。
 type Reporter func(Event)
 
-// Engine 串联 Planner -> Writer -> Editor -> Commit 的章节循环。
+// Engine 串联 Writer -> Editor -> Commit，并在阶段触发点调用 Director 维护正式 Direction。
 // usedCalls 从 usage.jsonl 恢复成功调用数；本进程中的失败调用也占额度，但不写入该文件。
 type Engine struct {
 	generator llm.Generator

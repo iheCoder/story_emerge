@@ -24,9 +24,9 @@ roles:
   architect:
     provider: deepseek
     model: architect-model
-  planner:
+  director:
     provider: openai
-    model: planner-model
+    model: director-model
   writer:
     provider: deepseek
     model: writer-model
@@ -47,44 +47,14 @@ roles:
 		t.Fatal(err)
 	}
 
-	if got := configs[llm.RolePlanner]; got.Model != "planner-model" || got.Provider != "openai" {
-		t.Fatal("Planner 没有独立模型绑定")
+	if got := configs[llm.RoleDirector]; got.Model != "director-model" || got.Provider != "openai" {
+		t.Fatal("Director 没有独立模型绑定")
 	}
 	if got := configs[llm.RoleWriter]; got.Model != "writer-model" || got.Provider != "deepseek" || got.APIKey != "deepseek-secret" {
 		t.Fatalf("Writer 配置解析错误: %#v", got)
 	}
 	if got := configs[llm.RoleCommit]; got.Model != "commit-model" || got.Provider != "openai" || got.Endpoint != "https://openai.test/v1/responses" {
 		t.Fatalf("Commit 配置解析错误: %#v", got)
-	}
-}
-
-func TestLoadAllowsOptionalUnwiredDirectorRole(t *testing.T) {
-	// 场景：用户希望单独试验已经实现的 Story Director，但生产章节循环仍只要求原有五个角色。
-	// 预期：配置层识别 director 并建立独立模型绑定；没有 director 的旧配置仍由上一个测试证明可正常加载。
-	path := writeConfig(t, `
-providers:
-  test:
-    api_key: secret
-    endpoint: https://example.test/responses
-roles:
-  architect: {provider: test, model: architect-model}
-  planner: {provider: test, model: planner-model}
-  director: {provider: test, model: director-model}
-  writer: {provider: test, model: writer-model}
-  editor: {provider: test, model: editor-model}
-  commit: {provider: test, model: commit-model}
-`)
-
-	settings, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	configs, err := settings.RoleConfigs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := configs[llm.RoleDirector]; got.Model != "director-model" || got.Provider != "test" {
-		t.Fatalf("Director 没有获得独立模型绑定: %#v", got)
 	}
 }
 
@@ -105,7 +75,7 @@ providers:
     endpoint: https://deepseek.test/responses
 roles:
   architect: {provider: deepseek, model: model}
-  planner: {provider: deepseek, model: planner-model}
+  director: {provider: deepseek, model: director-model}
   writer: {provider: deepseek, model: model}
   editor: {provider: deepseek, model: model}
   commit: {provider: deepseek, model: model}
@@ -122,7 +92,7 @@ providers:
     endpoint: https://deepseek.test/responses
 roles:
   architect: {provider: deepseek, model: model}
-  planner: {provider: deepseek, model: planner-model}
+  director: {provider: deepseek, model: director-model}
   writer: {provider: deepseek, model: model}
   editor: {provider: deepseek, model: model}
 `,
@@ -150,7 +120,7 @@ providers:
     endpoint: https://deepseek.test/responses
 roles:
   architect: {provider: missing, model: model}
-  planner: {provider: deepseek, model: planner-model}
+  director: {provider: deepseek, model: director-model}
   writer: {provider: deepseek, model: model}
   editor: {provider: deepseek, model: model}
   commit: {provider: deepseek, model: model}
@@ -182,5 +152,19 @@ func TestRemovedReaderRoleIsRejected(t *testing.T) {
 	settings := Settings{Providers: map[string]ProviderSettings{"test": {APIKey: "test", Endpoint: "https://example.test"}}, Roles: roles}
 	if _, err := settings.RoleConfigs(); err == nil || !strings.Contains(err.Error(), "未知工作流角色 reader") {
 		t.Fatalf("旧角色没有拒绝: %v", err)
+	}
+}
+
+func TestRemovedPlannerRoleIsRejected(t *testing.T) {
+	// 场景：配置仍保留已经从生产链删除的 Planner。
+	// 预期：启动时明确拒绝，避免用户误以为该模型仍会参与写作。
+	roles := map[string]RoleSettings{}
+	for _, role := range requiredRoles {
+		roles[role] = RoleSettings{Provider: "test", Model: "model"}
+	}
+	roles["planner"] = RoleSettings{Provider: "test", Model: "model"}
+	settings := Settings{Providers: map[string]ProviderSettings{"test": {APIKey: "test", Endpoint: "https://example.test"}}, Roles: roles}
+	if _, err := settings.RoleConfigs(); err == nil || !strings.Contains(err.Error(), "未知工作流角色 planner") {
+		t.Fatalf("旧 Planner 没有拒绝: %v", err)
 	}
 }

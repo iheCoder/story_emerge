@@ -48,21 +48,16 @@ func ValidateCore(core StoryCore) error {
 	return nil
 }
 func ValidateDirection(direction Direction) error {
-	if !nonempty(direction.Focus) || !nonempty(direction.DesiredShift) {
-		return fmt.Errorf("当前方向缺少重心或期望变化")
+	if !nonempty(direction.Focus) || !nonempty(direction.DesiredShift) || !nonempty(direction.ReaderExpectation) {
+		return fmt.Errorf("当前方向缺少重心、期望变化或读者期待")
 	}
 	return nil
 }
 
-// ValidateDirectorDecision 校验独立 Story Director 的阶段级输出。
-// 现有 Direction 仍允许没有 reader_expectation，保证尚未接线的组件不改变 Architect/Planner 生产协议；
-// 只有 Director 自己的输出必须补齐读者正在等待的阶段性发展。
+// ValidateDirectorDecision 校验 Story Director 的阶段级输出。
 func ValidateDirectorDecision(current Direction, decision DirectorDecision) error {
 	if err := ValidateDirection(decision.Direction); err != nil {
 		return err
-	}
-	if !nonempty(decision.Direction.ReaderExpectation) {
-		return fmt.Errorf("Story Director 缺少阶段级读者期待")
 	}
 	if !nonempty(decision.Reason) {
 		return fmt.Errorf("Story Director 缺少判断依据")
@@ -84,41 +79,18 @@ func ValidateDirectorDecision(current Direction, decision DirectorDecision) erro
 	}
 	return nil
 }
-func ValidatePlan(plan ChapterPlan) error {
-	switch plan.DirectionAction {
-	case "KEEP":
-		if plan.CurrentDirection != nil {
-			return fmt.Errorf("KEEP 不能同时修改方向")
-		}
-	case "UPDATE":
-		if plan.CurrentDirection == nil {
-			return fmt.Errorf("UPDATE 缺少新方向")
-		}
-		if err := ValidateDirection(*plan.CurrentDirection); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("无效方向操作: %s", plan.DirectionAction)
-	}
-	if !nonempty(plan.ChapterIntent.IntendedEffect) || !nonempty(plan.ChapterIntent.WhyNow) {
-		return fmt.Errorf("章节意图缺少叙事效果或时机理由")
-	}
-
-	// 约束保持精简是 Planner 的写作指导；必要约束多于建议条数时仍完整交给 Writer。
-	return nil
-}
 func ValidateEditorDecision(decision EditorDecision) error {
-	if !nonempty(decision.Reason) {
-		return fmt.Errorf("Editor 缺少判断原因")
+	if !nonempty(decision.Assessment.Contribution) || !nonempty(decision.Assessment.Sequence) || !nonempty(decision.Assessment.Execution) {
+		return fmt.Errorf("Editor 缺少章节贡献、序列效果或正文实现判断")
 	}
 
 	// 问题数量不决定评审是否有效；保留全部问题供修订，但动作与问题必须一致。
-	switch decision.Action {
+	switch decision.ChapterDecision {
 	case EditorAccept:
 		if len(decision.BlockingIssues) != 0 {
 			return fmt.Errorf("ACCEPT 不能带有未解决的阻断问题")
 		}
-	case EditorRevise, EditorReplan:
+	case EditorRevise:
 		if decision.StoryComplete {
 			return fmt.Errorf("未接受的正文不能确认完结")
 		}
@@ -126,12 +98,18 @@ func ValidateEditorDecision(decision EditorDecision) error {
 			return fmt.Errorf("退回必须说明需要修复或重新考虑的问题")
 		}
 	default:
-		return fmt.Errorf("Editor action 无效: %s", decision.Action)
+		return fmt.Errorf("Editor chapter_decision 无效: %s", decision.ChapterDecision)
 	}
 	for _, issue := range decision.BlockingIssues {
 		if !nonempty(issue) {
 			return fmt.Errorf("阻断问题不能为空")
 		}
+	}
+	if decision.DirectionReview.Requested != nonempty(decision.DirectionReview.Reason) {
+		return fmt.Errorf("Editor 的 Direction Review 请求与原因不一致")
+	}
+	if decision.ChapterDecision != EditorAccept && decision.DirectionReview.Requested {
+		return fmt.Errorf("未接受的正文不能请求 Direction Review")
 	}
 	return nil
 }
@@ -202,10 +180,13 @@ func validateStateItems(characterID, field string, items []StateItem) error {
 	return nil
 }
 func ValidateState(state State) error {
-	if state.Chapter < 0 || state.WrittenCharacters < 0 {
+	if state.Chapter < 0 || state.WrittenCharacters < 0 || state.DirectionVersion < 1 {
 		return fmt.Errorf("检查点章节或字数无效")
 	}
-	if state.Chapter == 0 && (state.Completed || state.WrittenCharacters != 0) {
+	if state.DirectionReviewedAfterChapter < 0 || state.DirectionReviewedAfterChapter > state.Chapter {
+		return fmt.Errorf("Direction 复查章节无效")
+	}
+	if state.Chapter == 0 && (state.Completed || state.WrittenCharacters != 0 || state.DirectionReviewedAfterChapter != 0) {
 		return fmt.Errorf("初始检查点不能已经完结或包含正文字数")
 	}
 	if err := ValidateDirection(state.Direction); err != nil {

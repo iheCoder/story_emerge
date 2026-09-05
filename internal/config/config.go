@@ -108,9 +108,9 @@ func (settings Settings) RoleConfigs() (map[string]llm.Config, error) {
 // 一次校验齐全，避免前面的角色已经花费生成成本，后面的必需角色却没有配置。
 var requiredRoles = []string{
 	llm.RoleArchitect,
+	llm.RoleDirector,
 	llm.RoleWriter,
 	llm.RoleEditor,
-	llm.RolePlanner,
 	llm.RoleCommit,
 }
 
@@ -133,7 +133,7 @@ func (settings Settings) validate() error {
 
 	// 既拒绝拼错的角色名，也拒绝悬空的供应商引用。
 	for role, binding := range roles {
-		if role != llm.RoleArchitect && role != llm.RolePlanner && role != llm.RoleDirector && role != llm.RoleWriter && role != llm.RoleEditor && role != llm.RoleCommit {
+		if role != llm.RoleArchitect && role != llm.RoleDirector && role != llm.RoleWriter && role != llm.RoleEditor && role != llm.RoleCommit {
 			return fmt.Errorf("未知工作流角色 %s", role)
 		}
 		if _, ok := providers[binding.Provider]; !ok {

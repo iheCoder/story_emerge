@@ -32,7 +32,14 @@ initial_story_state：
   条目使用稳定 id，characters 中引用的人物 id 不得重复，且都必须出现在初始 characters 中。单个人的事实、认知与承诺写入该人物字段。不要为了补齐关系参与者而额外建立人物档案。不要生成人物百科、世界百科或历史档案。
 
 current_direction：
-只输出 focus 和 desired_shift，描述当前这一段最值得发生的变化。
+输出 focus、desired_shift 和 reader_expectation，描述当前这一段最值得发生的变化。
+
+- focus 说明未来若干章节主要在哪片故事区域工作。
+- desired_shift 说明这一阶段走完后，相对于当前状态应形成什么累积变化。
+- reader_expectation 说明连续阅读的读者现在最值得等待什么得到发展、碰撞或阶段回应。
+
+Current Direction 是阶段导航，不是下一章任务。三个字段都应来自已经建立的故事内容和 Story Core，
+不要为了制造追读感凭空增加秘密、人物、组织或威胁。
 不要规划章节 Outline、阶段章节数或具体退出事件，不提前决定当前写作暂时不需要知道的答案。
 
 

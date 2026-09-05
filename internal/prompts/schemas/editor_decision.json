@@ -1,31 +1,50 @@
 {
   "type": "object",
   "properties": {
-    "action": {
+    "chapter_decision": {
       "type": "string",
       "enum": [
         "ACCEPT",
-        "REVISE_WRITER",
-        "RETURN_TO_PLANNER"
+        "REVISE_WRITER"
       ]
     },
-    "reason": {
-      "type": "string"
+    "assessment": {
+      "type": "object",
+      "properties": {
+        "contribution": { "type": "string" },
+        "sequence": { "type": "string" },
+        "execution": { "type": "string" }
+      },
+      "required": [
+        "contribution",
+        "sequence",
+        "execution"
+      ],
+      "additionalProperties": false
     },
     "blocking_issues": {
       "type": "array",
-      "items": {
-        "type": "string"
-      }
+      "items": { "type": "string" }
     },
-    "story_complete": {
-      "type": "boolean"
-    }
+    "direction_review": {
+      "type": "object",
+      "properties": {
+        "requested": { "type": "boolean" },
+        "reason": { "type": "string" }
+      },
+      "required": [
+        "requested",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "story_complete": { "type": "boolean" }
   },
   "required": [
-    "action",
-    "reason",
+    "chapter_decision",
+    "assessment",
     "blocking_issues",
+    "direction_review",
     "story_complete"
   ],
   "additionalProperties": false

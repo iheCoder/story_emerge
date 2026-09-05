@@ -1,30 +1,28 @@
 # story-emerge
 
-面向约 8～10 万字中篇的中文小说生成系统。通过明确的章节意图、正文验收和当前事实，持续从已有故事中产生后续。
+面向约 8～10 万字中篇的中文小说生成系统。通过阶段方向、Writer 自主局部规划、正文验收和当前事实，持续从已有故事中产生后续。
 
     初始化：Story Architect → Story Core + Initial Story State + Current Direction
-    每章：Chapter Planner → Writer → Editor → Commit → 原子提交
-                                  ↓           ↓
-                            退回 Writer    提取当前事实、轨迹、摘要
-                            或 Planner
+    每章：Writer → Story Editor → Commit → 原子提交
+             ↑          ↓            ↓
+             └── 修订正文       提取当前事实、轨迹、摘要
+    阶段：每 3 个 ACCEPT 章节或 Editor 请求 → Story Director → Current Direction
 
-Planner 决定值得产生的叙事效果，Writer 自由创造实现路径，Editor 决定正文准入与完结，Commit 只提取已接受正文。没有 Reader、固定 Outline、Live Tension 或自动接受兜底。
-
-仓库同时预置了一个尚未接入上述生产链的 Story Director：它可以独立审查跨越若干章节的 Current Direction，并返回 KEEP / ADJUST / REPLACE。当前没有章节流程调用它，也没有改变 Planner、Writer、Editor 的输入或职责；其输出不包含 `story_status`，完结权仍只属于 Editor。
+Director 维护未来若干章节的阶段方向，Writer 自主决定本章最自然的局部发展并完成正文，Editor 判断本章放进最近序列后是否成立，Commit 只提取已接受正文。没有 Chapter Planner、Reader、固定 Outline、Live Tension 或自动接受兜底。
 
 ## 启动
 
 `go.mod` 声明 Go 1.27。配置五个模型职责后启动：
 
     cp config.example.yaml config.yaml
-    # 填写供应商密钥以及 architect / planner / writer / editor / commit 的模型
+    # 填写供应商密钥以及 architect / director / writer / editor / commit 的模型
     go run ./cmd/story-emerge
 
 浏览器打开 `http://127.0.0.1:8787`，填写故事想法和篇幅。原始输入完整保存；Writer 不读取 User Idea。
 
 Web 首次提供最多三章试读，已提交章节立即可读。只要已经初始化、尚未完结且没有正在运行的任务，故事页和最新章节末尾就提供“继续生长”，每次生成下一章；前三章中断后、刷新或服务重启后同样可用。三章之后还可选择持续生成到正式完结，短篇提前完成时按实际结果显示。
 
-继续生长以最后一份正式 HEAD 为起点，保留已提交章节。未提交章节从 Planner 开始生成，不复用中断前的计划、草稿或评审；本次不提供各阶段的独立恢复。
+继续生长以最后一份正式 HEAD 为起点，保留已提交章节。未提交章节从 Writer 开始生成，不复用中断前的草稿或评审；如果章节已经提交、只是 Director 失败，则下一次运行先重试阶段复查，再写新章。
 
     go run ./cmd/story-emerge serve --config config.yaml --addr 127.0.0.1:8787
     go run ./cmd/story-emerge run --project novels/demo --chapters 3
@@ -42,8 +40,7 @@ Web 首次提供最多三章试读，已提交章节立即可读。只要已经�
 | 角色 | reasoning_effort | max_output_tokens |
 |---|---|---:|
 | architect | low | 16000 |
-| planner | low | 6000 |
-| director（预备，未接线） | low | 6000 |
+| director | low | 6000 |
 | writer | none | 12000 |
 | editor | low | 6000 |
 | commit | none | 24000 |
@@ -61,9 +58,10 @@ Web 首次提供最多三章试读，已提交章节立即可读。只要已经�
     ├── story-core.json      一次性作品核心
     ├── HEAD                 最新完整提交的章节号
     ├── chapters/            已接受正文
-    ├── commits/             最终计划、Editor 判断、事实补丁、轨迹和短摘要
-    ├── checkpoints/         当前事实、方向、最近五章轨迹、字符数、完结标记
-    ├── .work/               规划尝试、草稿、审核和失败输出
+    ├── commits/             Editor 判断、事实补丁、轨迹和短摘要
+    ├── direction-reviews/   Director 的正式阶段复查记录
+    ├── checkpoints/         当前事实、方向及版本、最近五章轨迹、字符数、完结标记
+    ├── .work/               草稿、审核、阶段判断原始结果和失败输出
     ├── runtime.log          追加式运行日志：阶段、调用结果、耗时、最终错误
     └── usage.jsonl          模型用量记录
 
@@ -81,6 +79,6 @@ CLI 与 Web 都把每本小说的生成日志实时追加到 `runtime.log`，一
     GOCACHE=/tmp/story-emerge-go-cache go test -race ./...
     GOCACHE=/tmp/story-emerge-go-cache go vet ./...
 
-行为测试覆盖角色输入边界、修订回退、空事实补丁、状态替换删除、轨迹窗口、提交失败恢复及完结停止。这些测试使用脚本化模型，不证明生成小说的文学质量。
+行为测试覆盖角色输入边界、Writer 修订、三章周期与 Editor 提前触发、Director 故障恢复、空事实补丁、状态替换删除、轨迹窗口、提交失败恢复及完结停止。这些测试使用脚本化模型，不证明生成小说的文学质量。
 
 设计与边界见 [docs/design.md](docs/design.md)，故障处理见 [恢复手册](project_cognition/runbooks/model-output-failure-recovery.md)。

@@ -13,8 +13,8 @@ import (
 )
 
 func TestStoryDirectorCanRunAloneWithoutTouchingProductionState(t *testing.T) {
-	// 场景：仅独立执行一次尚未接线的 Story Director，模拟未来实验或人工审计。
-	// 预期：请求只走 director 角色，输入只含阶段判断依据，结果只落在 .work，HEAD 与正式章节状态均不产生。
+	// 场景：绕过生产触发器，独立执行一次 Story Director，模拟人工审计。
+	// 预期：底层调用只生成并校验决定；没有正式提交调用时，结果只落在 .work，不创建 HEAD 或 checkpoint。
 	root := filepath.Join(t.TempDir(), "novel")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)

@@ -154,9 +154,9 @@ func TestRelationshipIntegrityStillRejectsInvalidIDs(t *testing.T) {
 func TestQuietChaptersKeepFactsAndRollTrajectory(t *testing.T) {
 	// 场景：连续七章只承担情绪/日常功能，没有事实补丁。
 	// 预期：空补丁合法；只留最后五章轨迹；字数再多也不自行完结。
-	current := State{Direction: Direction{Focus: "共同生活", DesiredShift: "逐渐建立信任"}}
+	current := State{Direction: Direction{Focus: "共同生活", DesiredShift: "逐渐建立信任", ReaderExpectation: "读者等待信任如何形成"}, DirectionVersion: 1}
 	for number := 1; number <= 7; number++ {
-		commit := ChapterCommit{Chapter: number, Title: "日常", Plan: ChapterPlan{DirectionAction: "KEEP", ChapterIntent: ChapterIntent{IntendedEffect: "感受陪伴", WhyNow: "承接前一章情绪"}}, Review: EditorDecision{Action: EditorAccept, Reason: "日常可信"}, Result: CommitResult{ChapterSummary: "一起做饭", TrajectoryEntry: TrajectoryMove{StoryMove: "现实局势未变，呈现陪伴", NarrativeShape: "做饭 → 交谈"}}}
+		commit := ChapterCommit{Chapter: number, Title: "日常", Review: EditorDecision{ChapterDecision: EditorAccept, Assessment: EditorAssessment{Contribution: "呈现陪伴", Sequence: "继续积累关系", Execution: "日常可信"}}, Result: CommitResult{ChapterSummary: "一起做饭", TrajectoryEntry: TrajectoryMove{StoryMove: "现实局势未变，呈现陪伴", NarrativeShape: "做饭 → 交谈"}}}
 		next, err := ApplyChapter(current, "# 第1章 日常\n\n甲和乙一起做饭。", commit)
 		if err != nil {
 			t.Fatal(err)
@@ -174,12 +174,36 @@ func TestQuietChaptersKeepFactsAndRollTrajectory(t *testing.T) {
 func TestOnlyAcceptedEditorCanConfirmCompletion(t *testing.T) {
 	// 场景：模型在退回正文的同时宣称故事结束。
 	// 预期：输出被拒绝；只有明确 ACCEPT 才有权确认完结。
-	decision := EditorDecision{Action: EditorReplan, Reason: "意图不成立", BlockingIssues: []string{"需要重新考虑"}, StoryComplete: true}
+	decision := EditorDecision{ChapterDecision: EditorRevise, Assessment: EditorAssessment{Contribution: "无贡献", Sequence: "重复", Execution: "需要重写"}, BlockingIssues: []string{"需要重新考虑"}, StoryComplete: true}
 	if ValidateEditorDecision(decision) == nil {
 		t.Fatal("退回稿件确认了完结")
 	}
-	decision = EditorDecision{Action: EditorAccept, Reason: "核心承诺已兑现", StoryComplete: true}
+	decision = EditorDecision{ChapterDecision: EditorAccept, Assessment: EditorAssessment{Contribution: "核心承诺已兑现", Sequence: "形成落点", Execution: "正文成立"}, StoryComplete: true}
 	if err := ValidateEditorDecision(decision); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDirectionReviewChangesOnlyDirectionMetadata(t *testing.T) {
+	// 场景：第三章提交后 Director 调整阶段方向。
+	// 预期：章节、事实、字数与轨迹完全不变，只更新 Direction、版本和复查章节。
+	current := State{
+		Chapter: 3, Direction: Direction{Focus: "建立信任", DesiredShift: "形成合作", ReaderExpectation: "读者等待两人能否合作"},
+		DirectionVersion: 1, RecentTrajectory: []TrajectoryEntry{
+			{Chapter: 1, TrajectoryMove: TrajectoryMove{StoryMove: "相识", NarrativeShape: "见面"}},
+			{Chapter: 2, TrajectoryMove: TrajectoryMove{StoryMove: "试探", NarrativeShape: "交谈"}},
+			{Chapter: 3, TrajectoryMove: TrajectoryMove{StoryMove: "合作", NarrativeShape: "共同处理问题"}},
+		}, WrittenCharacters: 1200,
+	}
+	updated := Direction{Focus: "承担后果", DesiredShift: "从合作转向共同负责", ReaderExpectation: "读者等待合作如何经受代价"}
+	next, err := ApplyDirectionReview(current, DirectionReview{AfterChapter: 3, Version: 2, Decision: DirectorDecision{Action: DirectorAdjust, Direction: updated, Reason: "合作已经形成"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Chapter != current.Chapter || next.WrittenCharacters != current.WrittenCharacters || !reflect.DeepEqual(next.Story, current.Story) || !reflect.DeepEqual(next.RecentTrajectory, current.RecentTrajectory) {
+		t.Fatalf("Direction Review 越权修改章节事实: %#v", next)
+	}
+	if next.Direction != updated || next.DirectionVersion != 2 || next.DirectionReviewedAfterChapter != 3 {
+		t.Fatalf("Direction Review 未正确生效: %#v", next)
 	}
 }

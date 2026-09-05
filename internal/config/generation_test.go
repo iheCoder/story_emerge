@@ -14,7 +14,7 @@ func TestRoleGenerationConfigReachesRequest(t *testing.T) {
   test: {api_key: secret, endpoint: https://example.test}
 roles:
   architect: {provider: test, model: model}
-  planner: {provider: test, model: model}
+  director: {provider: test, model: model}
   writer: {provider: test, model: model}
   editor: {provider: test, model: model}
   commit: {provider: test, model: model%s}

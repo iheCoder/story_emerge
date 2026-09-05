@@ -18,14 +18,13 @@ func preparedStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	core := story.StoryCore{StoryEngine: story.StoryEngine{Loop: "行动产生局面", ProgressionAxis: "逐渐承担责任"}, ReaderPromises: []story.ReaderPromise{{Promise: "承诺一", PayoffShape: "经历"}, {Promise: "承诺二", PayoffShape: "选择"}, {Promise: "承诺三", PayoffShape: "结果"}}, ExperienceContract: story.ExperienceContract{TargetExperience: "真实生活"}}
-	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, CurrentDirection: story.Direction{Focus: "共同生活", DesiredShift: "逐渐信任"}}); err != nil {
+	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, CurrentDirection: story.Direction{Focus: "共同生活", DesiredShift: "逐渐信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
 		t.Fatal(err)
 	}
 	return files
 }
 func acceptedCommit() story.ChapterCommit {
-	direction := story.Direction{Focus: "面对后果", DesiredShift: "承担选择"}
-	return story.ChapterCommit{Chapter: 1, Title: "选择", Plan: story.ChapterPlan{DirectionAction: "UPDATE", CurrentDirection: &direction, ChapterIntent: story.ChapterIntent{IntendedEffect: "承担责任", WhyNow: "此前已有选择"}}, Review: story.EditorDecision{Action: story.EditorAccept, Reason: "结果成立", StoryComplete: true}, Result: story.CommitResult{ChapterSummary: "人物接受结果", TrajectoryEntry: story.TrajectoryMove{StoryMove: "开始承担责任", NarrativeShape: "选择 → 接受结果"}}}
+	return story.ChapterCommit{Chapter: 1, Title: "选择", Review: story.EditorDecision{ChapterDecision: story.EditorAccept, Assessment: story.EditorAssessment{Contribution: "开始承担责任", Sequence: "形成落点", Execution: "结果成立"}, StoryComplete: true}, Result: story.CommitResult{ChapterSummary: "人物接受结果", TrajectoryEntry: story.TrajectoryMove{StoryMove: "开始承担责任", NarrativeShape: "选择 → 接受结果"}}}
 }
 
 func TestCommitFailureKeepsOldHEADAndHidesOrphanArtifacts(t *testing.T) {
@@ -63,7 +62,7 @@ func TestCommitFailureKeepsOldHEADAndHidesOrphanArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	next, err := files.CommitChapter(chapter, acceptedCommit())
-	if err != nil || next.Chapter != 1 || !next.Completed || next.Direction.Focus != "面对后果" {
+	if err != nil || next.Chapter != 1 || !next.Completed || next.Direction.Focus != "共同生活" {
 		t.Fatalf("重试未完整提交: %#v %v", next, err)
 	}
 }
@@ -89,5 +88,42 @@ func TestCoreAndUserIdeaStayStableAndCompletedBookCannotAdvance(t *testing.T) {
 	after, _ := os.ReadFile(files.path("story-core.json"))
 	if string(before) != string(after) {
 		t.Fatal("作品核心被修改")
+	}
+}
+
+func TestDirectionReviewUpdatesCurrentCheckpointWithoutAdvancingHEAD(t *testing.T) {
+	// 场景：第一章已经正式提交且尚未完结，Director 随后调整阶段 Direction。
+	// 预期：同一份 checkpoint 得到新方向和审计元数据，HEAD、正文与章节提交记录均不改变。
+	files := preparedStore(t)
+	commit := acceptedCommit()
+	commit.Review.StoryComplete = false
+	chapter := "# 第1章 选择\n\n他接受了结果。"
+	if _, err := files.CommitChapter(chapter, commit); err != nil {
+		t.Fatal(err)
+	}
+	beforeCommit, err := os.ReadFile(files.path(commitPath(1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated := story.Direction{Focus: "面对后果", DesiredShift: "共同承担选择", ReaderExpectation: "读者等待选择如何改变两人的关系"}
+	next, err := files.CommitDirectionReview(story.DirectionReview{
+		AfterChapter: 1, Version: 2,
+		Decision: story.DirectorDecision{Action: story.DirectorAdjust, Direction: updated, Reason: "初步选择已经形成"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, _ := os.ReadFile(files.path("HEAD"))
+	afterCommit, _ := os.ReadFile(files.path(commitPath(1)))
+	savedChapter, _ := files.LoadChapter(1)
+	if string(head) != "001\n" || savedChapter != chapter || string(beforeCommit) != string(afterCommit) {
+		t.Fatal("Direction Review 改写了章节提交边界")
+	}
+	if next.Direction != updated || next.DirectionVersion != 2 || next.DirectionReviewedAfterChapter != 1 {
+		t.Fatalf("Direction Review 没有更新当前检查点: %#v", next)
+	}
+	if _, err := os.Stat(files.path(directionReviewPath(1))); err != nil {
+		t.Fatalf("缺少 Direction Review 审计记录: %v", err)
 	}
 }

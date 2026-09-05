@@ -47,14 +47,13 @@ func prepareGrowthBook(t *testing.T, root string, chapters int, complete bool) {
 		ReaderPromises:     []story.ReaderPromise{{Promise: "生活", PayoffShape: "日常"}, {Promise: "信任", PayoffShape: "选择"}, {Promise: "责任", PayoffShape: "结果"}},
 		ExperienceContract: story.ExperienceContract{TargetExperience: "平凡生活的温暖"},
 	}
-	if err := files.CommitGenesis(story.Genesis{Title: "生长测试", StoryCore: core, CurrentDirection: story.Direction{Focus: "共同生活", DesiredShift: "信任"}}); err != nil {
+	if err := files.CommitGenesis(story.Genesis{Title: "生长测试", StoryCore: core, CurrentDirection: story.Direction{Focus: "共同生活", DesiredShift: "信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
 		t.Fatal(err)
 	}
 	for n := 1; n <= chapters; n++ {
 		commit := story.ChapterCommit{
 			Chapter: n, Title: fmt.Sprintf("第%d章 晚饭", n),
-			Plan:   story.ChapterPlan{DirectionAction: "KEEP", ChapterIntent: story.ChapterIntent{IntendedEffect: "感受信任", WhyNow: "已有共同经历"}},
-			Review: story.EditorDecision{Action: story.EditorAccept, Reason: "正文成立", StoryComplete: complete && n == chapters},
+			Review: story.EditorDecision{ChapterDecision: story.EditorAccept, Assessment: story.EditorAssessment{Contribution: "感受信任", Sequence: "继续积累", Execution: "正文成立"}, StoryComplete: complete && n == chapters},
 			Result: story.CommitResult{ChapterSummary: "两人共享晚饭", TrajectoryEntry: story.TrajectoryMove{StoryMove: "通过日常感受信任", NarrativeShape: "做饭 → 相处"}},
 		}
 		if _, err := files.CommitChapter(fmt.Sprintf("# 第%d章 晚饭\n\n两人坐下来吃饭。", n), commit); err != nil {
