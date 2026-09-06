@@ -74,7 +74,7 @@ func preparedStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	core := story.StoryCore{StoryEngine: story.StoryEngine{Loop: "行动产生局面", ProgressionAxis: "逐渐承担责任"}, ReaderPromises: []story.ReaderPromise{{Promise: "承诺一", PayoffShape: "经历"}, {Promise: "承诺二", PayoffShape: "选择"}, {Promise: "承诺三", PayoffShape: "结果"}}, ExperienceContract: story.ExperienceContract{TargetExperience: "真实生活"}}
-	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, StorySpine: []story.SpineStage{{From: "临时相处", To: "主动信任", WhyItMatters: "共同选择需要信任", ExitEvidence: "有事时愿意主动寻求对方支持"}}, CurrentDirection: story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "逐渐信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
+	if err := files.CommitGenesis(story.Genesis{Title: "测试书", StoryCore: core, StorySpine: []string{"临时相处逐渐成为能在重要决定中相互依靠的关系"}, CurrentDirection: story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "逐渐信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
 		t.Fatal(err)
 	}
 	return files

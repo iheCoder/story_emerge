@@ -57,15 +57,15 @@ func ValidateDirection(direction Direction) error {
 	return nil
 }
 
-// ValidateSpine 只检查参照是否完整可读。阶段多少、因果是否成立、变化是否充分都是文学判断，
-// 不在代码中比较前后状态文本、强制串行依赖或设置题材规则。
-func ValidateSpine(spine []SpineStage) error {
+// ValidateSpine 只检查路线非空且每项有内容，不把文学判断编码成阶段数或字数门槛。
+// 旧对象格式由 JSON 解码拒绝，不拼接旧变化轴来伪造一条新的全书路线。
+func ValidateSpine(spine []string) error {
 	if len(spine) == 0 {
 		return fmt.Errorf("缺少 Story Spine")
 	}
 	for index, stage := range spine {
-		if !nonempty(stage.From) || !nonempty(stage.To) || !nonempty(stage.WhyItMatters) || !nonempty(stage.ExitEvidence) {
-			return fmt.Errorf("Story Spine 第 %d 项缺少变化、因果作用或成立依据", index+1)
+		if !nonempty(stage) {
+			return fmt.Errorf("Story Spine 第 %d 项缺少处境或转向", index+1)
 		}
 	}
 	return nil

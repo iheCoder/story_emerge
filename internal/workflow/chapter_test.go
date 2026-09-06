@@ -63,7 +63,7 @@ func testGenesis() story.Genesis {
 			Characters:    []story.CharacterState{{ID: "a", Name: "阿禾", Facts: []story.StateItem{{Value: "村民"}}, KnowledgeAndBeliefs: []story.StateItem{}, CommitmentsAndIntentions: []story.StateItem{}}},
 			Relationships: []story.RelationshipState{},
 		},
-		StorySpine:       []story.SpineStage{{From: "互不信任", To: "能够依靠", WhyItMatters: "SPINE_FUTURE_SECRET", ExitEvidence: "愿意把对方纳入重要决定"}},
+		StorySpine:       []string{"临时相处逐渐成为能在重要决定中相互依靠的关系，SPINE_FUTURE_SECRET"},
 		CurrentDirection: testDirection(),
 	}
 }

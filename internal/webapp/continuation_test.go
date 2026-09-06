@@ -47,7 +47,7 @@ func prepareGrowthBook(t *testing.T, root string, chapters int, complete bool) {
 		ReaderPromises:     []story.ReaderPromise{{Promise: "生活", PayoffShape: "日常"}, {Promise: "信任", PayoffShape: "选择"}, {Promise: "责任", PayoffShape: "结果"}},
 		ExperienceContract: story.ExperienceContract{TargetExperience: "平凡生活的温暖"},
 	}
-	if err := files.CommitGenesis(story.Genesis{Title: "生长测试", StoryCore: core, StorySpine: []story.SpineStage{{From: "临时相处", To: "主动信任", WhyItMatters: "共同选择需要信任", ExitEvidence: "有事时愿意主动寻求对方支持"}}, CurrentDirection: story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
+	if err := files.CommitGenesis(story.Genesis{Title: "生长测试", StoryCore: core, StorySpine: []string{"临时相处逐渐成为能在重要决定中相互依靠的关系"}, CurrentDirection: story.Direction{CurrentPosition: "当前关系仍在形成，稳定信任尚未建立", Focus: "共同生活", DesiredShift: "信任", ReaderExpectation: "读者等待信任如何形成"}}); err != nil {
 		t.Fatal(err)
 	}
 	for n := 1; n <= chapters; n++ {

@@ -5,7 +5,7 @@
 ## 创作信息
 
 - Story Core 保存 Story Engine、Reader Promises 与 Experience Contract。它定义“这是一本什么小说”，初始化后没有逐章改写入口。
-- Story Spine 保存全书尺度的关键变化及因果作用。每项只有 from、to、why_it_matters、exit_evidence，描述当前路径中的变化与成立依据；由 Architect 一次建立，后续只读，不是已发生的事实、大纲或逐项完成清单。
+- Story Spine 用字符串数组描述从开场到承诺兑现的全书路线，每项简述主要处境或转向，按发展顺序排列并允许重叠；由 Architect 一次建立，后续只读，不是已发生的事实、大纲或逐项完成清单。
 - Current Story State 保存当前仍有效的世界事实、人物事实/认知/承诺及关系，不保存事件流水。人物猜测必须归属于人物。
 - Current Direction 由 current_position、focus、desired_shift、reader_expectation 组成。current_position 说明已建立什么、仍欠什么，是可纠正的阶段判断；其余字段描述未来若干章节共同工作的故事区域、希望形成的累积变化及读者期待。
 - Recent Trajectory 保留最近五章的 story_move 与 narrative_shape，只记录实际怎样移动，不评价好坏。
@@ -89,4 +89,4 @@ Web 的“继续生长”不以三章试读完成为前提：项目已初始化�
 
 生产不迁移旧 Planner 格式，不同时运行两套架构。旧实验报告和小说产物可以保留作为历史证据，但不定义当前运行协议。
 
-本版初始化与检查点要求 `story_spine` 和 Direction 的 `current_position`。缺失它们的旧项目不会自动补造规划或覆写历史；需要使用本版新建小说。工程测试验证数据与权限边界，不证明跨阶段正文或整部小说质量已经改善。
+本版初始化与检查点要求字符串数组 `story_spine` 和 Direction 的 `current_position`。缺失字段或仍使用旧四字段对象路线的项目不会自动补造规划、转换路线或覆写历史；需要使用本版新建小说。工程测试验证数据与权限边界，不证明跨阶段正文或整部小说质量已经改善。

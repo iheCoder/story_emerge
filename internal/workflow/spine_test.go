@@ -81,9 +81,9 @@ func TestSpineReachesOnlyDirectorAndSurvivesRestartAndChapterCommit(t *testing.T
 }
 
 func TestInvalidPlanningOutputCannotChangeFormalState(t *testing.T) {
-	// 场景：Architect 未提供完整参照，或 Director 试图越权返回 Spine / 省略当前位置。
+	// 场景：Architect 未提供可读路线、仍返回旧变化轴对象，或 Director 越权返回 Spine / 省略当前位置。
 	// 预期：严格 Schema/领域校验明确拒绝；初始化失败无 HEAD，Director 失败保留已提交第3章和旧规划。
-	for _, scenario := range []string{"missing_initial_spine", "empty_initial_spine", "unauthorized_revision", "unauthorized_spine", "missing_position"} {
+	for _, scenario := range []string{"missing_initial_spine", "empty_initial_spine", "blank_initial_spine", "old_initial_spine", "unauthorized_revision", "unauthorized_spine", "missing_position"} {
 		t.Run(scenario, func(t *testing.T) {
 			fake := newFake(3)
 			stage := "chapter_003_director"
@@ -100,6 +100,13 @@ func TestInvalidPlanningOutputCannotChangeFormalState(t *testing.T) {
 				delete(output, "story_spine")
 			case "empty_initial_spine":
 				output["story_spine"] = []any{}
+			case "blank_initial_spine":
+				output["story_spine"] = []string{"开场仍是临时相处", " \n\t"}
+			case "old_initial_spine":
+				// 旧字段即使齐全也不是新路线，不能靠默认值或字符串拼接自动迁移。
+				output["story_spine"] = []any{map[string]any{
+					"from": "临时相处", "to": "稳定依赖", "why_it_matters": "共同决定需要信任", "exit_evidence": "主动求助",
+				}}
 			case "unauthorized_revision":
 				output["spine_revision"] = testGenesis().StorySpine
 			case "unauthorized_spine":
@@ -109,7 +116,7 @@ func TestInvalidPlanningOutputCannotChangeFormalState(t *testing.T) {
 			}
 			fake.responses[stage] = mustJSON(output)
 			// 越权字段会经过一次格式修复；即使模型坚持返回，也不能进入正式检查点。
-			if strings.HasPrefix(scenario, "unauthorized_") {
+			if strings.HasPrefix(scenario, "unauthorized_") || scenario == "old_initial_spine" {
 				fake.responses[stage+"_format_repair"] = mustJSON(output)
 			}
 			if initialFailure {

@@ -12,7 +12,7 @@ const RecentTrajectoryLimit = 5
 func NewInitialState(genesis Genesis) State {
 	return State{
 		Story: cloneStoryState(genesis.InitialStoryState), Direction: genesis.CurrentDirection,
-		StorySpine:       append([]SpineStage{}, genesis.StorySpine...),
+		StorySpine:       append([]string{}, genesis.StorySpine...),
 		DirectionVersion: 1, RecentTrajectory: []TrajectoryEntry{},
 	}
 }

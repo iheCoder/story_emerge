@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func testSpine() []SpineStage {
-	return []SpineStage{{From: "临时相处", To: "主动信任", WhyItMatters: "共同选择需要信任", ExitEvidence: "愿意寻求支持，并让对方参与重要决定"}}
+func testSpine() []string {
+	return []string{"临时相处逐渐成为能在重要决定中相互依靠的关系"}
 }
 
 func TestEveryDirectionActionPreservesArchitectSpine(t *testing.T) {

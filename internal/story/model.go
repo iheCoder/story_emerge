@@ -17,7 +17,7 @@ type Project struct {
 type Genesis struct {
 	Title             string            `json:"title"`
 	StoryCore         StoryCore         `json:"story_core"`
-	StorySpine        []SpineStage      `json:"story_spine"`
+	StorySpine        []string          `json:"story_spine"`
 	InitialStoryState CurrentStoryState `json:"initial_story_state"`
 	CurrentDirection  Direction         `json:"current_direction"`
 }
@@ -76,17 +76,6 @@ type Direction struct {
 	Focus             string `json:"focus"`
 	DesiredShift      string `json:"desired_shift"`
 	ReaderExpectation string `json:"reader_expectation"`
-}
-
-// SpineStage 描述当前全书路径中的一项关键变化及其因果作用。
-// Spine 由 Architect 一次建立，后续只读；它是长期创作参照，不是已经发生的事实。
-// 不使用阶段游标、完成比例或逐章事件来驱动正文。
-// ExitEvidence 描述哪些表现能够支持变化已经成立；是否充分仍由 Director 结合正式历史判断。
-type SpineStage struct {
-	From         string `json:"from"`
-	To           string `json:"to"`
-	WhyItMatters string `json:"why_it_matters"`
-	ExitEvidence string `json:"exit_evidence"`
 }
 
 // DirectorAction 描述 Story Director 对当前阶段方向的处理方式。
@@ -198,9 +187,11 @@ type ChapterCommit struct {
 
 // State 是 HEAD 对应的检查点。Direction 元数据只保证阶段复查可恢复且不会重复执行。
 type State struct {
-	Chapter                       int               `json:"chapter"`
-	Story                         CurrentStoryState `json:"current_story_state"`
-	StorySpine                    []SpineStage      `json:"story_spine"`
+	Chapter int               `json:"chapter"`
+	Story   CurrentStoryState `json:"current_story_state"`
+	// StorySpine 逐项简述全书主要处境与转向，由 Architect 一次建立并固定保存。
+	// 转向是否已成立由 Director 根据历史判断，不预存证明事件或阶段状态。
+	StorySpine                    []string          `json:"story_spine"`
 	Direction                     Direction         `json:"current_direction"`
 	DirectionVersion              int               `json:"direction_version"`
 	DirectionReviewedAfterChapter int               `json:"direction_reviewed_after_chapter"`

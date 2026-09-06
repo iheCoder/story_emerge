@@ -14,7 +14,7 @@ const directionReviewInterval = 3
 // Spine 与 Direction 都是规划信息；仅事实和正式正文能证明某项变化已经发生。
 type directorInput struct {
 	StoryCore         story.StoryCore         `json:"story_core"`
-	StorySpine        []story.SpineStage      `json:"story_spine"`
+	StorySpine        []string                `json:"story_spine"`
 	CurrentStoryState story.CurrentStoryState `json:"current_story_state"`
 	CurrentDirection  story.Direction         `json:"current_direction"`
 	RecentTrajectory  []story.TrajectoryEntry `json:"recent_trajectory"`

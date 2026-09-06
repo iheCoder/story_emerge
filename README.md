@@ -83,6 +83,6 @@ CLI 与 Web 都把每本小说的生成日志实时追加到 `runtime.log`，一
 
 行为测试覆盖角色输入边界、Spine 初始化/只读边界/重启恢复、规划整体提交失败、Writer 修订、三章周期与 Editor 提前触发、Director 故障恢复、空事实补丁、状态替换删除、轨迹窗口、软篇幅超出及完结停止。这些测试使用脚本化模型，不证明生成小说的文学质量。
 
-本版要求新建小说生成 Spine；旧检查点缺少 `story_spine` 或 `current_position` 时明确拒绝，不自动补写历史规划。设计说明见 [Story Spine](docs/story-spine.md)。
+本版要求新建小说生成字符串数组形式的 Spine；旧检查点缺少 `story_spine`、缺少 `current_position` 或仍使用四字段对象路线时明确拒绝，不自动转换或补写历史规划。设计说明见 [Story Spine](docs/story-spine.md)。
 
 设计与边界见 [docs/design.md](docs/design.md)，故障处理见 [恢复手册](project_cognition/runbooks/model-output-failure-recovery.md)。
