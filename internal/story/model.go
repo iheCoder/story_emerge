@@ -164,7 +164,8 @@ type TrajectoryEntry struct {
 	TrajectoryMove
 }
 
-// CommitResult 只提取已接受正文。章节号、标题、字数与完成状态由程序和 Editor 提供。
+// CommitResult 保存旧状态与已接受正文对应的状态维护结果、本章轨迹和摘要。
+// 规划只供取舍状态，不属于输出；章节号、标题、字数与完成状态由程序和 Editor 提供。
 type CommitResult struct {
 	StatePatch      StatePatch     `json:"state_patch"`
 	TrajectoryEntry TrajectoryMove `json:"trajectory_entry"`

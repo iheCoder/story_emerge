@@ -8,14 +8,27 @@ import (
 	"strings"
 )
 
-// extractAccepted 以旧事实与 ACCEPT 正文为提取依据；没有 User Idea、Intent、方向或 Editor 结论，
-// 防止把计划当成已经发生的事实，或用验收者的解释代替正文证据。
-func (engine *Engine) extractAccepted(ctx context.Context, number int, previous story.CurrentStoryState, chapter string) (story.CommitResult, error) {
-	// 显式构造提取输入，只允许“此前已成立的事实 + 这次正文实际写出的内容”成为新状态依据。
-	input, err := asPrettyJSON(struct {
-		PreviousCurrentStoryState story.CurrentStoryState `json:"previous_current_story_state"`
-		AcceptedChapter           string                  `json:"accepted_chapter"`
-	}{previous, chapter})
+// commitInput 区分状态证据与保留状态的参照。旧状态和 ACCEPT 正文说明已经发生了什么；
+// Spine、Direction 和近期轨迹帮助筛选仍需保留的当前约束，不能把规划变成事实。
+// 纠正调用复用同一输入，避免首次筛选与纠正时看到的上下文不一致。
+type commitInput struct {
+	PreviousCurrentStoryState story.CurrentStoryState `json:"previous_current_story_state"`
+	AcceptedChapter           string                  `json:"accepted_chapter"`
+	StorySpine                []string                `json:"story_spine"`
+	CurrentDirection          story.Direction         `json:"current_direction"`
+	RecentTrajectory          []story.TrajectoryEntry `json:"recent_trajectory"`
+}
+
+// extractAccepted 维护章末当前状态，同时提取本章轨迹与摘要；不读取 User Idea 或 Editor 结论。
+func (engine *Engine) extractAccepted(ctx context.Context, number int, current story.State, chapter string) (story.CommitResult, error) {
+	// 使用本章开始前已提交的规划与轨迹。本章实际发展由已验收正文提供，
+	// 不提前运行 Director，也不把本次尚未提取的轨迹混入历史参照。
+	previous := current.Story
+	evidence := commitInput{
+		PreviousCurrentStoryState: previous, AcceptedChapter: chapter,
+		StorySpine: current.StorySpine, CurrentDirection: current.Direction, RecentTrajectory: current.RecentTrajectory,
+	}
+	input, err := asPrettyJSON(evidence)
 	if err != nil {
 		return story.CommitResult{}, err
 	}
@@ -51,11 +64,10 @@ func (engine *Engine) extractAccepted(ctx context.Context, number int, previous 
 
 		// 保持原始证据完整。失败候选只是待纠正的提取结果，不能成为新增事实的来源。
 		input, err = asPrettyJSON(struct {
-			PreviousCurrentStoryState story.CurrentStoryState `json:"previous_current_story_state"`
-			AcceptedChapter           string                  `json:"accepted_chapter"`
-			RejectedExtraction        story.CommitResult      `json:"rejected_extraction"`
-			ValidationError           string                  `json:"validation_error"`
-		}{previous, chapter, raw, err.Error()})
+			commitInput
+			RejectedExtraction story.CommitResult `json:"rejected_extraction"`
+			ValidationError    string             `json:"validation_error"`
+		}{evidence, raw, err.Error()})
 		if err != nil {
 			return story.CommitResult{}, err
 		}
@@ -71,7 +83,7 @@ func (engine *Engine) commitReviewedChapter(ctx context.Context, current story.S
 	// Commit 以旧事实与正文提取，状态操作错误可在本次调用内纠正一次；最终失败仍返回原状态。
 	// 不把 ACCEPT 当作章节已经完成，也不从上一次失败留下的候选恢复正文。
 	number := current.Chapter + 1
-	result, err := engine.extractAccepted(ctx, number, current.Story, chapter)
+	result, err := engine.extractAccepted(ctx, number, current, chapter)
 	if err != nil {
 		return current, err
 	}

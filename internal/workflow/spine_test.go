@@ -14,9 +14,9 @@ import (
 	"story_emerge/internal/story"
 )
 
-func TestSpineReachesOnlyDirectorAndSurvivesRestartAndChapterCommit(t *testing.T) {
+func TestSpineReachesDirectorAndCommitAndSurvivesRestart(t *testing.T) {
 	// 场景：Architect 建立固定参照，第3章后 Director 调整当前位置；重新启动后继续至第6章。
-	// 预期：Spine 随 checkpoint 恢复并穿过普通章节提交，Director 看到最近两章原文；下游只得到当前方向。
+	// 预期：Spine 随 checkpoint 恢复，Director 和 Commit 可读取；Writer、Editor 仍只得到当前方向。
 	fake := newFake(3)
 	for number, body := range []string{"FIRST_OLD_PROSE", "SECOND_PROSE_WITH_HESITATION", "THIRD_PROSE_LIMITED_TRUST"} {
 		fake.responses[chapterStage(number+1, "write")] = "# 第" + []string{"1", "2", "3"}[number] + "章 相处\n\n" + body
@@ -67,6 +67,17 @@ func TestSpineReachesOnlyDirectorAndSurvivesRestartAndChapterCommit(t *testing.T
 	}
 	for stage, request := range resumedFake.requests {
 		if request.Role == llm.RoleDirector {
+			continue
+		}
+		if request.Role == llm.RoleCommit {
+			// 重启后的 Commit 同样使用最新 Direction，且读取 Spine 不赋予修改规划的权限。
+			var received commitInput
+			if err := json.Unmarshal([]byte(request.Input), &received); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(received.StorySpine, initial.StorySpine) || received.CurrentDirection != updated || strings.Contains(request.Input, "DIRECTOR_AUDIT_ONLY") {
+				t.Fatalf("%s 状态筛选参照错误", stage)
+			}
 			continue
 		}
 		for _, forbidden := range []string{"SPINE_FUTURE_SECRET", "DIRECTOR_AUDIT_ONLY", "story_spine", "spine_revision"} {

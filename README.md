@@ -8,7 +8,7 @@
              └── 修订正文       提取当前事实、轨迹、摘要
     阶段：每 3 个 ACCEPT 章节或 Editor 请求 → Story Director → Direction
 
-Director 维护未来若干章节的阶段方向，Writer 自主决定本章最自然的局部发展并完成正文，Editor 判断本章放进最近序列后是否成立，Commit 只提取已接受正文。没有 Chapter Planner、Reader、固定 Outline、Live Tension 或自动接受兜底。
+Director 维护未来若干章节的阶段方向，Writer 自主决定本章最自然的局部发展并完成正文，Editor 判断本章放进最近序列后是否成立，Commit 根据旧状态和已接受正文维护当前状态，参考 Spine、Direction 和近期轨迹清理冗余历史，并生成本章轨迹与摘要。没有 Chapter Planner、Reader、固定 Outline、Live Tension 或自动接受兜底。
 
 Spine 描述全书关键变化及因果作用，由 Architect 一次建立并固定保存；Director 根据正式事实、摘要与最近两章原文判断进展，只调整当前 Direction。Writer 不读取完整 Spine，只获得包含 current_position 的当前 Direction。篇幅尽量符合，小说质量优先，不因达标需要而跳过铺垫或强迫结局。
 

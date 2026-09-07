@@ -21,11 +21,13 @@ User Idea 原样保存在 project.json，只进入一次性的 Story Architect�
 | Story Director | Core、Spine、当前事实、Direction、近期轨迹、全部 Ledger、最近两章正式正文、篇幅进度、可选 Editor 请求 | KEEP / ADJUST / REPLACE 阶段 Direction；Spine 只读；不规划下一章、不判断完结 |
 | Writer | Core、当前事实、Direction、近期轨迹、上一章、全书篇幅目标、下一章编号 | 自主决定本章局部发展并写正文；不读取 User Idea 或 Ledger |
 | Story Editor | Core、当前事实、Direction、近期轨迹、最近正文、Draft、篇幅进度、全部 Ledger | ACCEPT / REVISE_WRITER、可选阶段复查请求及完结确认；不规划下一章 |
-| Commit | 旧当前事实、已接受正文 | 事实补丁、轨迹和短摘要；不读取 Direction，不评价、不规划 |
+| Commit | 旧当前事实、已接受正文、Spine、Direction、近期轨迹 | 精简当前状态的补丁、本章轨迹和短摘要；规划只用于状态取舍，不评价、不规划 |
 
 Writer 是 Local Planner + Prose Writer。Direction 是跨章战略导航，不是本章 checklist；Writer 无需在一章内完成 desired_shift，也无需同时触及所有 Core Promise。安静日常、陪伴、关系、气氛和情绪承接仍可形成有效章节贡献。
 
-完整 Spine 只供 Architect 生成和 Director 使用，Writer、Editor、Commit 均不读取。阶段变化通过当前 Direction 传达；current_position 不包含未来阶段列表或终局预告，也不能覆盖正式事实、人物知情范围和正文。修订阶段保留相同边界。
+完整 Spine 由 Architect 生成，Director 用于维护方向，Commit 用于判断哪些当前状态仍需保留；Writer、Editor 均不读取。阶段变化通过当前 Direction 传达；current_position 不包含未来阶段列表或终局预告，也不能覆盖正式事实、人物知情范围和正文。修订阶段保留相同边界。
+
+Commit 同时检查旧状态和本章新增内容，把历史过程合并为当前结果，用现有 upsert/remove 明确更新和删除；省略旧项不会删除它。持续有效的身份、现实限制、信息差、关系边界和未完成承诺，不能因近期正文或轨迹已有记载而删除，因为这些上下文只保留有限章节。Spine、Direction 只用于取舍，不成为新增事实的证据；不设固定条目上限。
 
 Editor 分开判断 contribution、sequence 与 execution。它评价的是“本章放进最近故事序列后是否成立”，而不是是否完成整段 Direction。章节准入和 Direction 复查请求是两个正交维度：一章可以 ACCEPT，同时请求 Director 从下一章起调整阶段方向。
 
@@ -75,7 +77,7 @@ Director 在章节提交后失败时，该章节已经是正式历史，旧 Dire
 
 每类事实集合使用稳定 ID 和 upsert/remove。upsert 创建或完整替换当前值，remove 删除失效项；未触碰条目保留。空补丁合法，所有修改在副本上完成，校验失败不改变旧状态。
 
-Commit 提取在落盘前先补齐新增人物条目 ID，并在状态副本上校验完整 Patch。未知引用、更新/删除冲突等状态操作错误会触发一次 `commit_correction`：输入仍以旧事实和 ACCEPT 正文为证据，附带失败候选与具体校验错误。两次候选分别保留在 `.work`，纠正不成功则停止，不能自动丢弃操作或猜测 ID 来推进 HEAD。此纠正受同一模型调用预算与取消信号约束，不增加新的角色，也不提供跨运行的草稿恢复。
+Commit 提取在落盘前先补齐新增人物条目 ID，并在状态副本上校验完整 Patch。未知引用、更新/删除冲突等状态操作错误会触发一次 `commit_correction`：保留首次调用的旧事实、ACCEPT 正文、Spine、Direction 与近期轨迹，附带失败候选与具体校验错误；事实依据和规划参照的区别不变。两次候选分别保留在 `.work`，纠正不成功则停止，不能自动丢弃操作或猜测 ID 来推进 HEAD。此纠正受同一模型调用预算与取消信号约束，不增加新的角色，也不提供跨运行的草稿恢复。
 
 只有 ACCEPT 正文进入 Commit。严格 Schema 与本地校验负责字段、ID、引用、动作和提交边界，不把文学判断编码成分数或固定题材规则。
 

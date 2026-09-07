@@ -173,8 +173,28 @@ func TestRollingFlowGivesWriterLocalPlanningContextAndStopsAfterAcceptedCompleti
 		if request.Role == llm.RoleCommit {
 			var input map[string]any
 			_ = json.Unmarshal([]byte(request.Input), &input)
-			if len(input) != 2 || input["accepted_chapter"] == nil || input["previous_current_story_state"] == nil {
+			if len(input) != 5 || input["accepted_chapter"] == nil || input["previous_current_story_state"] == nil {
 				t.Fatalf("Commit 输入越权: %v", input)
+			}
+			// Commit 使用章初规划和已提交的五章轨迹，不能提前包含本章尚未提取的结果。
+			var received commitInput
+			if err := json.Unmarshal([]byte(request.Input), &received); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(received.StorySpine, testGenesis().StorySpine) || !reflect.DeepEqual(received.CurrentDirection, testDirection()) {
+				t.Fatalf("%s 未收到当前 Spine/Direction", stage)
+			}
+			var number int
+			if _, err := fmt.Sscanf(stage, "chapter_%d_commit", &number); err != nil {
+				t.Fatal(err)
+			}
+			if len(received.RecentTrajectory) != min(number-1, 5) {
+				t.Fatalf("%s 轨迹窗口错误", stage)
+			}
+			for index, entry := range received.RecentTrajectory {
+				if entry.Chapter != max(1, number-5)+index || entry.StoryMove != extracted().TrajectoryEntry.StoryMove {
+					t.Fatalf("%s 未使用此前正式轨迹: %#v", stage, entry)
+				}
 			}
 		}
 	}

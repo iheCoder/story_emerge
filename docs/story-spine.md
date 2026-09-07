@@ -49,7 +49,7 @@ KEEP 原样保留全部四字段；ADJUST 修正仍然有效的方向，包括�
 
 Architect 的路线随初始 checkpoint 保存，之后只读。Director 仍只输出 `action`、`direction`、`reason`；后者仅供审计，不传给 Writer。普通章节提交、方向复查和重启都保留原始路线。
 
-完整 Spine 不进入 Writer、Editor 或 Commit。Editor 不以单章是否完成路线转向验收正文，全书完结仍由 Editor 对 ACCEPT 正文的判断确认。
+完整 Spine 不进入 Writer 或 Editor。Commit 可读取 Spine，结合 Direction 和近期轨迹筛选仍需保留的当前状态，但不能把路线中的未来变化写成已成立事实，也不能修改 Spine 或 Direction。Editor 不以单章是否完成路线转向验收正文，全书完结仍由 Editor 对 ACCEPT 正文的判断确认。
 
 Director 或 checkpoint 写入失败时，已提交章不回滚，旧 Direction 保持正式有效；下一次 Run 先重试复查，再写下一章。审计文件不代表提交成功。
 
