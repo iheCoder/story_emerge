@@ -1,5 +1,5 @@
-// Package observe records workflow execution facts without depending on story-specific roles or stages.
-// The recorder is deliberately small: business code emits executions, operations and events; sinks decide where they live.
+// Package observe 记录工作流执行事实，不依赖小说角色、阶段或当前业务编排。
+// Recorder 刻意保持很薄：业务只描述 execution、operation 和 event，具体落盘方式由 Sink 决定。
 package observe
 
 import (
@@ -17,7 +17,7 @@ import (
 
 const schemaVersion = 1
 
-// Kind describes only durable technical semantics. Story roles and workflow stages stay in attributes so they can evolve freely.
+// Kind 只表达长期稳定的技术语义。角色、阶段等易变 workflow 信息全部放在 attributes 中。
 type Kind string
 
 const (
@@ -25,10 +25,10 @@ const (
 	KindModel    Kind = "model"
 )
 
-// Attrs carries dimensions that are useful for diagnosis but are not part of the stable observation schema.
+// Attrs 保存排障有价值但不属于稳定 Observation Schema 的维度。
 type Attrs map[string]any
 
-// Record is the append-only wire format consumed by JSONL today and other sinks later.
+// Record 是追加式观测记录的稳定线格式；V1 写入 JSONL，后续 Sink 可投递到 OTel 等后端。
 type Record struct {
 	SchemaVersion int       `json:"schema_version"`
 	At            time.Time `json:"at"`
@@ -44,23 +44,23 @@ type Record struct {
 	Attributes    Attrs     `json:"attributes,omitempty"`
 }
 
-// Sink persists one observation record. The workflow never sees sink errors directly; Recorder reports them out-of-band.
+// Sink 只负责持久化一条 Record。写入错误由 Recorder 旁路报告，不能反向污染业务结果。
 type Sink interface {
 	Write(Record) error
 }
 
-// Recorder owns trace identity and failure isolation while leaving persistence to a Sink.
+// Recorder 管理 trace 身份、父子关系和 Observation 自身的故障隔离。
 type Recorder struct {
 	sink    Sink
 	onError func(error)
 }
 
-// New creates a recorder around an arbitrary sink. onError may be nil when observation failures can be silently ignored.
+// New 用任意 Sink 创建 Recorder。onError 可为空，此时 Observation 写入失败被静默忽略。
 func New(sink Sink, onError func(error)) *Recorder {
 	return &Recorder{sink: sink, onError: onError}
 }
 
-// NewJSONL creates the lightweight local backend used by story-emerge V1.
+// NewJSONL 创建 V1 使用的本地追加式 JSONL 后端。
 func NewJSONL(path string, onError func(error)) *Recorder {
 	return New(&JSONLSink{path: filepath.Clean(path)}, onError)
 }
@@ -72,7 +72,7 @@ type traceContext struct {
 
 type traceContextKey struct{}
 
-// Execution is a top-level user-visible run such as initialize or continue.
+// Execution 表示一次顶层用户运行，例如初始化或继续生成。
 type Execution struct {
 	recorder *Recorder
 	id       string
@@ -81,7 +81,7 @@ type Execution struct {
 	once     sync.Once
 }
 
-// Operation is a timed child step. V1 uses it for shared model calls; future workflow steps can reuse the same primitive.
+// Operation 表示一个有持续时间的子步骤。V1 用于章节和模型调用，后续 workflow 可直接复用。
 type Operation struct {
 	recorder    *Recorder
 	executionID string
@@ -93,7 +93,7 @@ type Operation struct {
 	once        sync.Once
 }
 
-// StartExecution creates a new trace root and returns a context that automatically parents later operations.
+// StartExecution 创建 trace 根节点，并把 execution 身份放进 context 供后续 Operation 自动继承。
 func (recorder *Recorder) StartExecution(ctx context.Context, name string, attrs Attrs) (context.Context, *Execution) {
 	if recorder == nil {
 		return ctx, &Execution{}
@@ -108,7 +108,7 @@ func (recorder *Recorder) StartExecution(ctx context.Context, name string, attrs
 	return ctx, &Execution{recorder: recorder, id: id, name: name, started: started}
 }
 
-// End closes an execution exactly once. err represents the final workflow outcome, not merely a successful model request.
+// End 只结束一次 Execution。err 必须代表最终业务结果，不能拿某次模型请求成功冒充整轮成功。
 func (execution *Execution) End(err error, attrs Attrs) {
 	if execution == nil || execution.recorder == nil {
 		return
@@ -125,7 +125,7 @@ func (execution *Execution) End(err error, attrs Attrs) {
 	})
 }
 
-// StartOperation creates a timed child operation under the execution/operation carried by ctx.
+// StartOperation 根据 ctx 中的 trace 身份创建子步骤；业务层无需手工传递 execution_id 或 parent_id。
 func (recorder *Recorder) StartOperation(ctx context.Context, name string, kind Kind, attrs Attrs) (context.Context, *Operation) {
 	if recorder == nil {
 		return ctx, &Operation{}
@@ -144,7 +144,7 @@ func (recorder *Recorder) StartOperation(ctx context.Context, name string, kind 
 	}
 }
 
-// End closes an operation exactly once and records its final result attributes.
+// End 只结束一次 Operation，并把最终结果属性与状态写入同一个 operation_id。
 func (operation *Operation) End(err error, attrs Attrs) {
 	if operation == nil || operation.recorder == nil {
 		return
@@ -162,7 +162,7 @@ func (operation *Operation) End(err error, attrs Attrs) {
 	})
 }
 
-// Event records an instantaneous fact under the current operation, or directly under the execution when no operation is active.
+// Event 记录瞬时事实；有父 Operation 时挂在其下，否则直接挂在 Execution 下。
 func (recorder *Recorder) Event(ctx context.Context, name string, attrs Attrs) {
 	if recorder == nil {
 		return
@@ -201,13 +201,13 @@ func newID() string {
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), fallbackID.Add(1))
 }
 
-// JSONLSink appends one self-contained JSON object per line. A mutex keeps future parallel workflow branches from interleaving records.
+// JSONLSink 一行写一条完整 Record。互斥锁避免未来并行 workflow 分支把同一文件写成交错字节流。
 type JSONLSink struct {
 	path string
 	mu   sync.Mutex
 }
 
-// Write appends a complete record without keeping a long-lived file descriptor across runs.
+// Write 每次追加一条完整 JSON，不让 Recorder 长期持有文件句柄。
 func (sink *JSONLSink) Write(record Record) error {
 	data, err := json.Marshal(record)
 	if err != nil {
