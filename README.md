@@ -65,15 +65,21 @@ Web 首次提供最多三章试读，已提交章节立即可读。只要已经�
     ├── checkpoints/         当前事实、Spine、方向及版本、最近五章轨迹、字符数、完结标记
     ├── .work/               草稿、审核、阶段判断原始结果和失败输出
     ├── runtime.log          追加式运行日志：阶段、调用结果、耗时、最终错误
+    ├── observations.jsonl   Agent 执行轨迹：父子操作、决策、校验/恢复、模型输入输出与重试事实
     └── usage.jsonl          模型用量记录
 
 Chapter Ledger 从 HEAD 范围内的 commits 派生。正文、提交记录和检查点全部写完后才替换 HEAD。失败留下的孤儿文件不会进入书架、上下文或书稿导出。
 
 CLI 与 Web 都把每本小说的生成日志实时追加到 `runtime.log`，一行一条 JSON，重启后保留。它记录模型请求开始/成功/失败、输出预算、响应 ID、供应商返回的 token 统计，以及字段校验或提交失败等最终错误；不记录提示词和正文。不完整响应的已返回文本单独保存在 `.work/*-incomplete.txt`，不会被当成成功结果。`usage.jsonl` 仍只记录成功调用，不能用它排除失败尝试。
 
-    tail -f novels/<name>/runtime.log
+`observations.jsonl` 是独立于运行日志的 Agent Observation V1。核心协议只认识 `Execution / Operation / Event / Kind / attributes`，不会把 Writer、Editor、Commit 等当前 workflow 固化进 schema。当前轨迹包含 `story.run / story.initialize`、`chapter.generate`、`structured.generate` 和共享的 `llm.generate`；结构化解析失败、格式修复、章节评审/方向复查 decision 也以通用事件记录。
 
-日志写入失败会明确报告到启动终端的 stderr。日志从新版本运行时开始产生，无法补回旧进程未持久化的历史错误。
+这个 demo 默认保留每次模型调用实际使用的 instructions、input、Schema 和 output，便于从 trace 直接复盘“模型当时看到了什么、返回了什么”。模型调用还记录 logical call 总耗时，以及底层 HTTP 的 `attempt_count / retry_count / recovered / retry_reason`，用于区分模型本身慢和限流、5xx、网络瞬断引发的物理重试。Observation 写入失败只报告到 stderr，不改变故事 workflow 的成功或失败。
+
+    tail -f novels/<name>/runtime.log
+    tail -f novels/<name>/observations.jsonl
+
+日志写入失败会明确报告到启动终端的 stderr。日志和 Observation 都从新版本运行时开始产生，无法补回旧进程未持久化的历史现场。
 
 ## 验证与设计
 
