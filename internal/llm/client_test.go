@@ -47,9 +47,40 @@ func TestGenerateBuildsStructuredRequestAndCollectsAllText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 验证多段正文拼接和缓存 token 统计。
+	// 验证多段正文拼接、缓存 token 和“无重试时只有一次 physical attempt”。
 	if result.Text != "第一段\n第二段" || result.Usage.CachedTokens != 2 {
 		t.Fatalf("unexpected result: %#v", result)
+	}
+	if result.Retry.AttemptCount != 1 || result.Retry.RetryCount != 0 || result.Retry.Recovered || result.Retry.RetryReason != "" {
+		t.Fatalf("普通成功请求的 retry 元数据错误: %#v", result.Retry)
+	}
+}
+
+func TestGenerateReportsPhysicalRetryRecovery(t *testing.T) {
+	// 场景：第一次物理 HTTP attempt 被 429 限流，退避后第二次成功。
+	// 预期：对 workflow 仍是一轮逻辑模型调用，但 Result 能说明发生过一次真实 retry 且最终恢复。
+	calls := 0
+	client, err := NewClient(Config{Provider: "test", Model: "model", Endpoint: "https://example.test", APIKey: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.http.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return jsonHTTPResponse(http.StatusTooManyRequests, `{"error":"busy"}`), nil
+		}
+		return jsonHTTPResponse(http.StatusOK, successResponse), nil
+	})
+
+	result, err := client.Generate(context.Background(), Request{Stage: "retry_test", Input: "x", MaxOutputTokens: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("物理请求次数错误: %d", calls)
+	}
+	if result.Retry.AttemptCount != 2 || result.Retry.RetryCount != 1 || !result.Retry.Recovered || result.Retry.RetryReason != "http_429" {
+		t.Fatalf("恢复后的 retry 元数据错误: %#v", result.Retry)
 	}
 }
 
@@ -66,9 +97,12 @@ func TestGenerateDoesNotLeakAPIKeyInHTTPError(t *testing.T) {
 	client.http.Transport = transport
 
 	// 发起请求并检查错误信息的脱敏边界。
-	_, err := client.Generate(context.Background(), Request{Stage: "test", Input: "x", MaxOutputTokens: 1})
+	result, err := client.Generate(context.Background(), Request{Stage: "test", Input: "x", MaxOutputTokens: 1})
 	if err == nil || strings.Contains(err.Error(), "top-secret") {
 		t.Fatalf("expected redacted HTTP error, got %v", err)
+	}
+	if result.Retry.AttemptCount != 1 || result.Retry.RetryCount != 0 {
+		t.Fatalf("不可重试错误被误记为 retry: %#v", result.Retry)
 	}
 }
 
@@ -99,6 +133,9 @@ func TestIncompleteResponseRetainsDiagnosticsAndMeasuresBodyRead(t *testing.T) {
 	}
 	if result.Duration < bodyFinished.Sub(bodyStarted) {
 		t.Fatalf("耗时未包含响应体读取: %s", result.Duration)
+	}
+	if result.Retry.AttemptCount != 1 || result.Retry.RetryCount != 0 || result.Retry.Recovered {
+		t.Fatalf("incomplete 响应不应触发 physical retry: %#v", result.Retry)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"story_emerge/internal/llm"
+	"story_emerge/internal/observe"
 	"story_emerge/internal/story"
 )
 
@@ -47,7 +48,17 @@ func (engine *Engine) reviewStoryDirection(ctx context.Context, afterChapter int
 	if err := engine.store.SaveWorking(afterChapter, stage+".json", decision); err != nil {
 		return decision, err
 	}
-	return decision, story.ValidateDirectorDecision(input.CurrentDirection, decision)
+	if err := story.ValidateDirectorDecision(input.CurrentDirection, decision); err != nil {
+		return decision, err
+	}
+
+	// 与章节评审共用 generic decision 事件，具体的 Director/action 仍只是业务属性。
+	engine.observer.Event(ctx, "decision", observe.Attrs{
+		"name": "direction_review", "outcome": string(decision.Action),
+		"chapter": afterChapter, "role": llm.RoleDirector,
+		"editor_escalation": input.EditorEscalation != "",
+	})
+	return decision, nil
 }
 
 // reviewDirectionIfNeeded 在正式章节提交后执行周期复查或响应 Editor 的提前请求。

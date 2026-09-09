@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"context"
+
 	"story_emerge/internal/llm"
+	"story_emerge/internal/observe"
 	"story_emerge/internal/story"
 )
 
@@ -15,9 +17,14 @@ type architectInput struct {
 // Architect 此后不再被调用，JSON 格式修复仍沿用 architect 的模型配置。
 func (engine *Engine) Initialize(ctx context.Context, project story.Project) (genesis story.Genesis, err error) {
 	// 先建立项目目录并保存原始创意，保证模型请求失败时用户输入与诊断位置仍然存在。
+	// Observation 必须在 Prepare 之后开始，否则它自己创建的文件会让“空目录”检查误判为已有项目。
 	if err := engine.store.Prepare(project); err != nil {
 		return story.Genesis{}, err
 	}
+	ctx, execution := engine.observer.StartExecution(ctx, "story.initialize", observe.Attrs{
+		"length_profile": project.LengthProfile,
+	})
+	defer func() { execution.End(err, observe.Attrs{"used_calls": engine.usedCalls}) }()
 
 	engine.emit("initialize", "开始初始化故事")
 	defer func() { engine.logOutcome("initialize", err) }()

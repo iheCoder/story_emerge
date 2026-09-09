@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"story_emerge/internal/llm"
+	"story_emerge/internal/observe"
 	"story_emerge/internal/prompts"
 	"story_emerge/internal/store"
 )
@@ -33,6 +34,7 @@ type Engine struct {
 	generator llm.Generator
 	store     *store.Store
 	reporter  Reporter
+	observer  *observe.Recorder
 	maxCalls  int
 	usedCalls int
 }
@@ -48,9 +50,9 @@ func New(generator llm.Generator, files *store.Store, maxCalls int, reporter Rep
 		return nil, fmt.Errorf("统计既有模型调用失败: %w", err)
 	}
 
-	// 组装无状态生成器、文件仓库和可选进度播报器。
+	// Observation 默认落在项目目录，和日志一样是旁路诊断能力；业务流程不感知具体 sink。
 	return &Engine{
-		generator: generator, store: files, reporter: reporter,
+		generator: generator, store: files, reporter: reporter, observer: newObserver(files),
 		maxCalls: maxCalls, usedCalls: usedCalls,
 	}, nil
 }
@@ -92,6 +94,23 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 	}
 	engine.usedCalls++
 
+	// 模型调用是稳定的横切边界。V1 是 demo，直接保存模型真正看到的 instructions/input，
+	// 便于从 Observation 还原调用现场；角色、阶段、Schema 仍只是属性，不进入核心 schema。
+	startAttrs := observe.Attrs{
+		"stage": request.Stage, "role": request.Role, "call": engine.usedCalls,
+		"max_calls": engine.maxCalls, "max_output_tokens": request.MaxOutputTokens,
+		"reasoning_effort": request.ReasoningEffort, "input_bytes": len(request.Input),
+		"instructions": request.Instructions, "input": request.Input,
+		"schema": request.SchemaName,
+	}
+	if request.Schema != nil {
+		startAttrs["schema_definition"] = request.Schema
+	}
+	if request.Temperature != nil {
+		startAttrs["temperature"] = *request.Temperature
+	}
+	ctx, operation := engine.observer.StartOperation(ctx, "llm.generate", observe.KindModel, startAttrs)
+
 	// 日志记录解析后的实际参数：max_calls 限制调用次数，max_output_tokens 限制单次输出。
 	// 两者是不同的预算，便于区分“项目额度耗尽”和“单次模型响应被截断”。
 	engine.emit(request.Stage, "正在调用模型",
@@ -99,11 +118,38 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 		slog.Int("max_calls", engine.maxCalls), slog.Int("max_output_tokens", request.MaxOutputTokens),
 		slog.String("reasoning_effort", request.ReasoningEffort))
 
-	// 调用具体模型实现；错误带上阶段名后返回。
+	// 调用具体模型实现；外层 duration 覆盖底层 physical retry 和退避等待。
 	started := time.Now()
 	result, err := engine.generator.Generate(ctx, request)
+	duration := time.Since(started)
+	observationAttrs := observe.Attrs{
+		"stage": request.Stage, "role": request.Role, "duration_ms": duration.Milliseconds(),
+		"output_bytes": len(result.Text), "output": result.Text,
+	}
+	if result.Model != "" {
+		observationAttrs["model"] = result.Model
+	}
+	if result.ResponseID != "" {
+		observationAttrs["response_id"] = result.ResponseID
+	}
+	if result.Usage != (llm.Usage{}) {
+		observationAttrs["input_tokens"] = result.Usage.InputTokens
+		observationAttrs["output_tokens"] = result.Usage.OutputTokens
+		observationAttrs["total_tokens"] = result.Usage.TotalTokens
+		observationAttrs["cached_tokens"] = result.Usage.CachedTokens
+	}
+	if result.Retry.AttemptCount > 0 {
+		observationAttrs["attempt_count"] = result.Retry.AttemptCount
+		observationAttrs["retry_count"] = result.Retry.RetryCount
+		observationAttrs["recovered"] = result.Retry.Recovered
+		if result.Retry.RetryReason != "" {
+			observationAttrs["retry_reason"] = result.Retry.RetryReason
+		}
+	}
+	operation.End(err, observationAttrs)
+
 	attrs := []slog.Attr{
-		slog.String("role", request.Role), slog.Int64("duration_ms", time.Since(started).Milliseconds()),
+		slog.String("role", request.Role), slog.Int64("duration_ms", duration.Milliseconds()),
 	}
 	if result.Model != "" {
 		attrs = append(attrs, slog.String("model", result.Model))
@@ -114,6 +160,16 @@ func (engine *Engine) generate(ctx context.Context, request llm.Request) (llm.Re
 	// 网络失败可能没有供应商用量，缺失信息不能被日志伪装成“消耗为零”。
 	if result.Usage != (llm.Usage{}) {
 		attrs = append(attrs, slog.Int("input_tokens", result.Usage.InputTokens), slog.Int("output_tokens", result.Usage.OutputTokens))
+	}
+	if result.Retry.AttemptCount > 0 {
+		attrs = append(attrs,
+			slog.Int("attempt_count", result.Retry.AttemptCount),
+			slog.Int("retry_count", result.Retry.RetryCount),
+			slog.Bool("recovered", result.Retry.Recovered),
+		)
+		if result.Retry.RetryReason != "" {
+			attrs = append(attrs, slog.String("retry_reason", result.Retry.RetryReason))
+		}
 	}
 	if err != nil {
 		engine.log(slog.LevelError, request.Stage, "模型请求失败", append(attrs, slog.String("error", err.Error()))...)
@@ -190,7 +246,14 @@ func generateJSON[T any](
 	ctx context.Context,
 	engine *Engine,
 	stage, role, templateName, schemaName, input string,
-) (T, error) {
+) (value T, err error) {
+	// structured.generate 是跨 workflow 稳定的逻辑边界：一次业务结构化生成可能包含正常模型调用、
+	// 本地校验失败和一次格式修复。这样 repair 的因果关系不再依赖 stage 字符串事后猜测。
+	ctx, operation := engine.observer.StartOperation(ctx, "structured.generate", observe.KindStructured, observe.Attrs{
+		"stage": stage, "role": role, "schema": schemaName, "input_bytes": len(input),
+	})
+	defer func() { operation.End(err, nil) }()
+
 	// 结构化阶段最多经历“正常生成 -> JSON 解码 -> 一次格式修复”三步。
 	// 修复仍受同一 maxCalls 预算约束，第二次失败直接终止，不无限循环消耗额度。
 	var zero T
@@ -214,15 +277,21 @@ func generateJSON[T any](
 	decoded, decodeErr := decodeStructured[T](result.Text)
 	if decodeErr == nil {
 		// 语法已合法但必要字段缺失时直接失败，不能让格式修复替提取器创造事实。
-		if err := validateOutputShape(result.Text, schema); err != nil {
+		if shapeErr := validateOutputShape(result.Text, schema); shapeErr != nil {
+			engine.observer.Event(ctx, "validation.failed", observe.Attrs{
+				"stage": stage, "validator": "structured_output", "error": shapeErr.Error(),
+			})
 			if saveErr := engine.saveMalformedOutput(stage, result.Text); saveErr != nil {
 				return zero, saveErr
 			}
-			return zero, fmt.Errorf("%s 输出结构无效: %w", stage, err)
+			return zero, fmt.Errorf("%s 输出结构无效: %w", stage, shapeErr)
 		}
 		return decoded, nil
 	}
 
+	engine.observer.Event(ctx, "validation.failed", observe.Attrs{
+		"stage": stage, "validator": "json_decode", "error": decodeErr.Error(),
+	})
 	// 先保存坏原文再修复，保证即使修复请求也失败，人工仍能看到模型真实返回。
 	if err := engine.saveMalformedOutput(stage, result.Text); err != nil {
 		return zero, err
@@ -233,6 +302,9 @@ func generateJSON[T any](
 	if !strings.HasPrefix(cleaned, "{") {
 		return zero, decodeErr
 	}
+	engine.observer.Event(ctx, "retry", observe.Attrs{
+		"stage": stage, "scope": "logical", "reason": "invalid_json", "strategy": "format_repair",
+	})
 	return repairStructuredJSON[T](ctx, engine, request, result.Text, decodeErr)
 }
 
@@ -251,10 +323,16 @@ func repairStructuredJSON[T any](ctx context.Context, engine *Engine, request ll
 	}
 	decoded, decodeErr := decodeStructured[T](repaired.Text)
 	if decodeErr != nil {
+		engine.observer.Event(ctx, "validation.failed", observe.Attrs{
+			"stage": request.Stage, "validator": "json_decode", "attempt": "repair", "error": decodeErr.Error(),
+		})
 		_ = engine.saveMalformedOutput(request.Stage, repaired.Text)
 		return zero, decodeErr
 	}
 	if err := validateOutputShape(repaired.Text, request.Schema); err != nil {
+		engine.observer.Event(ctx, "validation.failed", observe.Attrs{
+			"stage": request.Stage, "validator": "structured_output", "attempt": "repair", "error": err.Error(),
+		})
 		if saveErr := engine.saveMalformedOutput(request.Stage, repaired.Text); saveErr != nil {
 			return zero, saveErr
 		}

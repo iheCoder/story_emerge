@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"context"
+
 	"story_emerge/internal/llm"
+	"story_emerge/internal/observe"
 	"story_emerge/internal/story"
 )
 
@@ -44,5 +46,16 @@ func (engine *Engine) reviewDraft(ctx context.Context, base chapterContext, chap
 	if err := engine.store.SaveWorking(base.NextChapter, stage+".json", decision); err != nil {
 		return decision, err
 	}
-	return decision, story.ValidateEditorDecision(decision)
+	if err := story.ValidateEditorDecision(decision); err != nil {
+		return decision, err
+	}
+
+	// decision 是跨 workflow 的通用控制流信号。Editor 只是当前决策来源，不进入 Observation schema。
+	engine.observer.Event(ctx, "decision", observe.Attrs{
+		"name": "chapter_review", "outcome": string(decision.ChapterDecision),
+		"chapter": base.NextChapter, "attempt": draft, "role": llm.RoleEditor,
+		"story_complete": decision.StoryComplete,
+		"direction_review_requested": decision.DirectionReview.Requested,
+	})
+	return decision, nil
 }

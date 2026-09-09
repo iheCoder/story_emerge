@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 
+	"story_emerge/internal/observe"
 	"story_emerge/internal/story"
 )
 
@@ -37,6 +38,12 @@ func (engine *Engine) writeAndReviewDraft(ctx context.Context, base chapterConte
 		if decision.ChapterDecision == story.EditorAccept {
 			return chapter, decision, nil
 		}
+
+		// REVISE_WRITER 是一次业务层 retry：decision 已经记录，retry 再明确它确实改变了后续控制流。
+		engine.observer.Event(ctx, "retry", observe.Attrs{
+			"scope": "workflow", "reason": "decision", "decision_name": "chapter_review",
+			"outcome": string(decision.ChapterDecision), "chapter": base.NextChapter, "attempt": draft,
+		})
 
 		// 修订只附带当前正文与阻断问题；下一轮仍走相同的保存、技术检查与评审流程。
 		chapter, err = engine.reviseDraft(ctx, writer, chapter, decision.BlockingIssues, draft)

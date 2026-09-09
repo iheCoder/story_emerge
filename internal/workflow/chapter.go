@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"strconv"
 
+	"story_emerge/internal/observe"
 	"story_emerge/internal/story"
 )
 
 // Run 只在完整章节之间更新运行状态。limit 是本次运行的章节上限；全书停止由 Editor
 // 对已接受正文的完结判断决定。每三章只触发 Direction 复查，不触发程序化完结。
 func (engine *Engine) Run(ctx context.Context, limit int) (err error) {
+	ctx, execution := engine.observer.StartExecution(ctx, "story.run", observe.Attrs{"chapter_limit": limit})
+	defer func() { execution.End(err, observe.Attrs{"used_calls": engine.usedCalls}) }()
+
 	engine.emit("run", "开始续写")
 	defer func() { engine.logOutcome("run", err) }()
 
@@ -66,7 +70,15 @@ func (engine *Engine) Run(ctx context.Context, limit int) (err error) {
 
 // runChapter 从最后一份正式历史生成下一章。Writer 自主决定本章的局部发展，
 // Editor 不通过时只退回 Writer；Planner 和 Chapter Intent 不再存在。
-func (engine *Engine) runChapter(ctx context.Context, project story.Project, core story.StoryCore, current story.State) (story.State, error) {
+func (engine *Engine) runChapter(ctx context.Context, project story.Project, core story.StoryCore, current story.State) (next story.State, err error) {
+	// 章节是当前 workflow 中有业务价值的诊断边界，但名称和章号都只是属性；Observer 不依赖 Writer/Editor/Commit 结构。
+	ctx, operation := engine.observer.StartOperation(ctx, "chapter.generate", observe.KindWorkflow, observe.Attrs{
+		"chapter": current.Chapter + 1,
+	})
+	defer func() {
+		operation.End(err, observe.Attrs{"chapter": current.Chapter + 1})
+	}()
+
 	// 固定本章依赖的正式事实。修订可以改变正文实现，但不能把失败草稿混入历史或改写 Direction。
 	base, err := engine.buildChapterContext(project, core, current)
 	if err != nil {
