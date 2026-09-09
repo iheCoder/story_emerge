@@ -44,15 +44,25 @@ type Request struct {
 	Temperature     *float64       // 可选采样温度；nil 表示交给服务端默认。
 }
 
+// RetryInfo 描述一次逻辑模型调用内部发生的真实 HTTP 尝试。
+// AttemptCount 包含首次请求；RetryCount 只计算已经实际发起的额外尝试，不把尚未执行的退避计划算作 retry。
+type RetryInfo struct {
+	AttemptCount int
+	RetryCount   int
+	Recovered    bool
+	RetryReason  string
+}
+
 // Result 携带模型返回的文本与元数据；响应不完整时也可能与错误一起返回，供诊断使用。
 // 调用方必须先检查错误，不能因 Text 非空就把不完整内容当成成功结果提交。
-// Duration 只用于观测，不参与故事决策。
+// Duration 只用于观测，不参与故事决策；Retry 区分一次逻辑调用内部发生的真实网络重试。
 type Result struct {
 	Text       string        // 拼接后的 output_text。
 	Model      string        // 服务端实际采用的模型。
 	ResponseID string        // 供应商响应 ID，便于追踪问题。
 	Usage      Usage         // token 统计。
-	Duration   time.Duration // 从发起请求到解码完成的耗时。
+	Duration   time.Duration // 最终一次 HTTP attempt 从发起请求到解码完成的耗时。
+	Retry      RetryInfo     // 物理 attempt/retry 信息；非 Client 测试替身可以保持零值。
 }
 
 // Usage 对齐 Responses API 的 token 统计，便于在 usage.jsonl 中审计成本。
@@ -153,36 +163,53 @@ func (client *Client) buildRequest(request Request) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
-// sendWithRetry 对可恢复故障做最多三次线性退避重试。
+// sendWithRetry 对可恢复故障做最多三次真实 HTTP attempt，并把物理重试事实带回上层 Observation。
 func (client *Client) sendWithRetry(ctx context.Context, stage string, body []byte) (Result, error) {
-	// 只重试网络瞬断、429 和 5xx；业务错误、JSON 解码错误和上下文取消不重试，
-	// 防止坏提示词在调用预算内反复消耗额度。退避时间按第几次尝试递增。
-	// 逐次发起请求，并根据 retry 标志判断是否继续。
+	// 只重试网络瞬断、429 和 5xx；业务错误、JSON 解码错误和上下文取消不重试。
+	// RetryCount 表示真正发出的额外请求，因此最后一次失败后不会再做没有下一次请求的退避等待。
 	var lastErr error
+	var lastResult Result
+	var lastRetryReason string
 	for attempt := 1; attempt <= 3; attempt++ {
-		result, retry, err := client.sendOnce(ctx, stage, body)
-		if err == nil || !retry {
+		result, retryReason, err := client.sendOnce(ctx, stage, body)
+		if retryReason != "" {
+			lastRetryReason = retryReason
+		}
+		result.Retry = RetryInfo{
+			AttemptCount: attempt,
+			RetryCount:   attempt - 1,
+			Recovered:    err == nil && attempt > 1,
+			RetryReason:  lastRetryReason,
+		}
+
+		// 成功或不可重试错误都立即返回；若此前已经重试，RetryInfo 仍保留恢复/失败路径。
+		if err == nil || retryReason == "" {
 			return result, err
 		}
 		lastErr = err
+		lastResult = result
+
+		// 第三次已经是最后一个物理 attempt，失败后直接返回，不能再多等待一个不存在的第四次请求。
+		if attempt == 3 {
+			return lastResult, fmt.Errorf("阶段 %s 重试后仍失败: %w", stage, lastErr)
+		}
 
 		// 对可恢复错误进行递增退避；上下文取消会立即打断等待。
 		if err := waitForRetry(ctx, time.Duration(attempt)*time.Second); err != nil {
-			return Result{}, err
+			return lastResult, err
 		}
 	}
-	return Result{}, fmt.Errorf("阶段 %s 重试后仍失败: %w", stage, lastErr)
+	return lastResult, fmt.Errorf("阶段 %s 重试后仍失败: %w", stage, lastErr)
 }
 
-// sendOnce 发送单次 HTTP 请求，并返回该错误是否值得由上层重试。
-func (client *Client) sendOnce(ctx context.Context, stage string, body []byte) (Result, bool, error) {
+// sendOnce 发送单次 HTTP 请求，并返回可恢复错误的稳定分类；空分类表示本次错误不应重试。
+func (client *Client) sendOnce(ctx context.Context, stage string, body []byte) (Result, string, error) {
 	// 每次尝试都新建带 context 的请求，使用户 Ctrl-C 或上层超时能立即中断 HTTP。
-	// 返回值中的 retry 标志由响应分类决定，供上层保持“有限且可解释”的重试策略。
-	// 创建绑定 context 的请求。
+	// retryReason 只表达 network/http_429/http_5xx，不把供应商错误正文直接变成高基数字段。
 	started := time.Now()
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, client.config.Endpoint, bytes.NewReader(body))
 	if err != nil {
-		return Result{}, false, fmt.Errorf("创建 %s 请求失败: %w", stage, err)
+		return Result{}, "", fmt.Errorf("创建 %s 请求失败: %w", stage, err)
 	}
 
 	// 附加鉴权和协议头；密钥只存在于内存中的 Header。
@@ -192,32 +219,41 @@ func (client *Client) sendOnce(ctx context.Context, stage string, body []byte) (
 	// 发送请求并交给统一响应解码器分类。
 	response, err := client.http.Do(httpRequest)
 	if err != nil {
-		return Result{}, isTransientNetworkError(err), fmt.Errorf("调用 %s 失败: %w", stage, err)
+		reason := ""
+		if isTransientNetworkError(err) {
+			reason = "network"
+		}
+		return Result{}, reason, fmt.Errorf("调用 %s 失败: %w", stage, err)
 	}
 	defer response.Body.Close()
 	// Do 返回时可能仅收到响应头。完整耗时必须包含随后读取和解码响应体的时间，
 	// 否则长文本生成几十秒也会在日志里被错误记成几百毫秒。
-	result, retry, err := client.decodeResponse(stage, response)
+	result, retryReason, err := client.decodeResponse(stage, response)
 	result.Duration = time.Since(started)
-	return result, retry, err
+	return result, retryReason, err
 }
 
-// decodeResponse 把 HTTP 响应转换为 Result 或带阶段上下文的错误。
-func (client *Client) decodeResponse(stage string, response *http.Response) (Result, bool, error) {
+// decodeResponse 把 HTTP 响应转换为 Result 或带阶段上下文的错误，并分类是否值得重试。
+func (client *Client) decodeResponse(stage string, response *http.Response) (Result, string, error) {
 	// 先按 HTTP 状态分类，再解析成功响应；错误体只读取有限字节，避免把网关噪声带入日志。
-	// 即使 HTTP 200，只有 completed 且包含可见 output_text 才算成功，
-	// 因为 Responses API 可能返回 incomplete 或 tool-call 等非正文结果。
-	// 先处理 HTTP 层错误；只有 429/5xx 允许上层重试。
+	// 即使 HTTP 200，只有 completed 且包含可见 output_text 才算成功。
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBodyBytes))
 		err := fmt.Errorf("阶段 %s 返回 HTTP %d: %s", stage, response.StatusCode, strings.TrimSpace(string(body)))
-		return Result{}, response.StatusCode == 429 || response.StatusCode >= 500, err
+		reason := ""
+		switch {
+		case response.StatusCode == http.StatusTooManyRequests:
+			reason = "http_429"
+		case response.StatusCode >= 500:
+			reason = "http_5xx"
+		}
+		return Result{}, reason, err
 	}
 
 	// 解码成功响应，并提取可见文本。
 	var payload responsePayload
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return Result{}, false, fmt.Errorf("解析 %s 响应失败: %w", stage, err)
+		return Result{}, "", fmt.Errorf("解析 %s 响应失败: %w", stage, err)
 	}
 
 	// 检查业务完成状态，防止把 incomplete/tool-call 当作正文。
@@ -227,11 +263,10 @@ func (client *Client) decodeResponse(stage string, response *http.Response) (Res
 		Usage: payload.Usage.toUsage(),
 	}
 	if payload.Status != "completed" || strings.TrimSpace(text) == "" {
-		// 连同错误保留供应商已返回的证据，供运行日志记录用量及响应 ID。
-		// err 仍非 nil，调用方不得把不完整文本当作成功结果或正式正文。
-		return result, false, responseStatusError(stage, payload)
+		// 连同错误保留供应商已返回的证据，供运行日志和 Observation 记录用量、响应 ID 与部分文本。
+		return result, "", responseStatusError(stage, payload)
 	}
-	return result, false, nil
+	return result, "", nil
 }
 
 // waitForRetry 可被 context 中断的退避等待。
