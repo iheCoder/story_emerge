@@ -1,5 +1,5 @@
-// Package observe 记录工作流执行事实，不依赖小说角色、阶段或当前业务编排。
-// Recorder 刻意保持很薄：业务只描述 execution、operation 和 event，具体落盘方式由 Sink 决定。
+// Package observe 记录 workflow 的执行事实，但不认识小说角色或当前阶段结构。
+// 业务层只描述 execution、operation 和 event；具体落盘方式由 Sink 决定，避免 workflow 绑定某个观测平台。
 package observe
 
 import (
@@ -17,18 +17,19 @@ import (
 
 const schemaVersion = 1
 
-// Kind 只表达长期稳定的技术语义。角色、阶段等易变 workflow 信息全部放在 attributes 中。
+// Kind 只表达长期稳定的技术语义。Writer、Editor、Commit 等易变概念继续放在 name/attributes 中。
 type Kind string
 
 const (
-	KindWorkflow Kind = "workflow"
-	KindModel    Kind = "model"
+	KindWorkflow   Kind = "workflow"
+	KindModel      Kind = "model"
+	KindStructured Kind = "structured"
 )
 
-// Attrs 保存排障有价值但不属于稳定 Observation Schema 的维度。
+// Attrs 保存诊断维度，不把 workflow 当前的数据模型固化进 Observation schema。
 type Attrs map[string]any
 
-// Record 是追加式观测记录的稳定线格式；V1 写入 JSONL，后续 Sink 可投递到 OTel 等后端。
+// Record 是追加式 Observation 的稳定线协议；当前写 JSONL，后续可由其他 Sink 映射到 OTel 等后端。
 type Record struct {
 	SchemaVersion int       `json:"schema_version"`
 	At            time.Time `json:"at"`
@@ -44,23 +45,23 @@ type Record struct {
 	Attributes    Attrs     `json:"attributes,omitempty"`
 }
 
-// Sink 只负责持久化一条 Record。写入错误由 Recorder 旁路报告，不能反向污染业务结果。
+// Sink 只负责持久化单条记录。写入错误不能反向改变 workflow 成败，由 Recorder 旁路报告。
 type Sink interface {
 	Write(Record) error
 }
 
-// Recorder 管理 trace 身份、父子关系和 Observation 自身的故障隔离。
+// Recorder 负责 trace identity、父子关系和故障隔离，存储实现留给 Sink。
 type Recorder struct {
 	sink    Sink
 	onError func(error)
 }
 
-// New 用任意 Sink 创建 Recorder。onError 可为空，此时 Observation 写入失败被静默忽略。
+// New 用任意 Sink 创建 Recorder；onError 可为空，此时 Observation 写入失败会被安静忽略。
 func New(sink Sink, onError func(error)) *Recorder {
 	return &Recorder{sink: sink, onError: onError}
 }
 
-// NewJSONL 创建 V1 使用的本地追加式 JSONL 后端。
+// NewJSONL 创建 story-emerge V1 使用的本地追加式后端。
 func NewJSONL(path string, onError func(error)) *Recorder {
 	return New(&JSONLSink{path: filepath.Clean(path)}, onError)
 }
@@ -72,7 +73,7 @@ type traceContext struct {
 
 type traceContextKey struct{}
 
-// Execution 表示一次顶层用户运行，例如初始化或继续生成。
+// Execution 表示一次顶层运行，例如 initialize 或 continue；业务名称只用于诊断，不参与 Recorder 行为。
 type Execution struct {
 	recorder *Recorder
 	id       string
@@ -81,7 +82,7 @@ type Execution struct {
 	once     sync.Once
 }
 
-// Operation 表示一个有持续时间的子步骤。V1 用于章节和模型调用，后续 workflow 可直接复用。
+// Operation 表示一个有持续时间的子操作。workflow 改名或新增阶段时仍复用同一个基础类型。
 type Operation struct {
 	recorder    *Recorder
 	executionID string
@@ -93,30 +94,32 @@ type Operation struct {
 	once        sync.Once
 }
 
-// StartExecution 创建 trace 根节点，并把 execution 身份放进 context 供后续 Operation 自动继承。
+// StartExecution 创建新的 trace 根，并通过 context 自动把后续 Operation 关联到本次运行。
 func (recorder *Recorder) StartExecution(ctx context.Context, name string, attrs Attrs) (context.Context, *Execution) {
 	if recorder == nil {
 		return ctx, &Execution{}
 	}
-	started := time.Now().UTC()
+	// started 保留 monotonic clock reading 只用于耗时；写入记录时再转 UTC wall clock。
+	started := time.Now()
 	id := newID()
 	recorder.record(Record{
-		At: started, Type: "execution_start", ExecutionID: id,
+		At: started.UTC(), Type: "execution_start", ExecutionID: id,
 		Name: name, Kind: KindWorkflow, Attributes: attrs,
 	})
 	ctx = context.WithValue(ctx, traceContextKey{}, traceContext{executionID: id})
 	return ctx, &Execution{recorder: recorder, id: id, name: name, started: started}
 }
 
-// End 只结束一次 Execution。err 必须代表最终业务结果，不能拿某次模型请求成功冒充整轮成功。
+// End 只关闭一次 Execution；err 必须是最终 workflow 结果，不能用“某次模型请求成功”代替。
 func (execution *Execution) End(err error, attrs Attrs) {
 	if execution == nil || execution.recorder == nil {
 		return
 	}
 	execution.once.Do(func() {
+		finished := time.Now()
 		record := Record{
-			At: time.Now().UTC(), Type: "execution_end", ExecutionID: execution.id,
-			Name: execution.name, Status: statusOf(err), DurationMS: time.Since(execution.started).Milliseconds(), Attributes: attrs,
+			At: finished.UTC(), Type: "execution_end", ExecutionID: execution.id,
+			Name: execution.name, Status: statusOf(err), DurationMS: finished.Sub(execution.started).Milliseconds(), Attributes: attrs,
 		}
 		if err != nil {
 			record.Error = err.Error()
@@ -125,16 +128,17 @@ func (execution *Execution) End(err error, attrs Attrs) {
 	})
 }
 
-// StartOperation 根据 ctx 中的 trace 身份创建子步骤；业务层无需手工传递 execution_id 或 parent_id。
+// StartOperation 在 ctx 携带的 Execution/Operation 下创建有持续时间的子步骤。
 func (recorder *Recorder) StartOperation(ctx context.Context, name string, kind Kind, attrs Attrs) (context.Context, *Operation) {
 	if recorder == nil {
 		return ctx, &Operation{}
 	}
 	parent, _ := ctx.Value(traceContextKey{}).(traceContext)
-	started := time.Now().UTC()
+	// 同 Execution 一样保留 monotonic 部分用于 duration，避免 wall clock 调整影响耗时。
+	started := time.Now()
 	id := newID()
 	recorder.record(Record{
-		At: started, Type: "operation_start", ExecutionID: parent.executionID,
+		At: started.UTC(), Type: "operation_start", ExecutionID: parent.executionID,
 		OperationID: id, ParentID: parent.operationID, Name: name, Kind: kind, Attributes: attrs,
 	})
 	ctx = context.WithValue(ctx, traceContextKey{}, traceContext{executionID: parent.executionID, operationID: id})
@@ -144,16 +148,17 @@ func (recorder *Recorder) StartOperation(ctx context.Context, name string, kind 
 	}
 }
 
-// End 只结束一次 Operation，并把最终结果属性与状态写入同一个 operation_id。
+// End 只关闭一次 Operation，并把本步骤最终结果属性追加到结束记录。
 func (operation *Operation) End(err error, attrs Attrs) {
 	if operation == nil || operation.recorder == nil {
 		return
 	}
 	operation.once.Do(func() {
+		finished := time.Now()
 		record := Record{
-			At: time.Now().UTC(), Type: "operation_end", ExecutionID: operation.executionID,
+			At: finished.UTC(), Type: "operation_end", ExecutionID: operation.executionID,
 			OperationID: operation.id, ParentID: operation.parentID, Name: operation.name, Kind: operation.kind,
-			Status: statusOf(err), DurationMS: time.Since(operation.started).Milliseconds(), Attributes: attrs,
+			Status: statusOf(err), DurationMS: finished.Sub(operation.started).Milliseconds(), Attributes: attrs,
 		}
 		if err != nil {
 			record.Error = err.Error()
@@ -162,7 +167,7 @@ func (operation *Operation) End(err error, attrs Attrs) {
 	})
 }
 
-// Event 记录瞬时事实；有父 Operation 时挂在其下，否则直接挂在 Execution 下。
+// Event 记录瞬时事实；有当前 Operation 时挂在它下面，否则直接挂在 Execution 下。
 func (recorder *Recorder) Event(ctx context.Context, name string, attrs Attrs) {
 	if recorder == nil {
 		return
@@ -201,13 +206,13 @@ func newID() string {
 	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), fallbackID.Add(1))
 }
 
-// JSONLSink 一行写一条完整 Record。互斥锁避免未来并行 workflow 分支把同一文件写成交错字节流。
+// JSONLSink 每行追加一个完整 JSON 对象；互斥锁避免未来并行 workflow 分支把两条记录写到同一行。
 type JSONLSink struct {
 	path string
 	mu   sync.Mutex
 }
 
-// Write 每次追加一条完整 JSON，不让 Recorder 长期持有文件句柄。
+// Write 每次独立打开并追加文件，不让长生命周期文件描述符跨越多轮生成。
 func (sink *JSONLSink) Write(record Record) error {
 	data, err := json.Marshal(record)
 	if err != nil {
